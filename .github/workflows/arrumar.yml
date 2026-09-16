@@ -1,0 +1,59 @@
+name: Arrumar ficheiros (uma vez)
+
+on:
+  push:
+    paths:
+      - ".github/workflows/arrumar.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  arrumar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mover ficheiros para a estrutura correta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d avalops-web/client || { echo "Subpasta avalops-web/ não encontrada"; exit 1; }
+
+          # 1. Apagar tudo na raiz exceto .git, .github, .gitignore e a subpasta
+          for f in * .[!.]*; do
+            case "$f" in .git|.github|.gitignore|avalops-web) ;; *) git rm -rq -- "$f" ;; esac
+          done
+
+          # 2. Puxar o conteúdo da subpasta para a raiz
+          for f in avalops-web/* avalops-web/.[!.]*; do
+            [ -e "$f" ] || continue
+            git mv -k -- "$f" .
+          done
+          rmdir avalops-web 2>/dev/null || true
+
+          # 3. Ficheiro de exemplo de ambiente (o upload pela web ignorou-o)
+          cat > client/.env.example <<'EOF'
+          # Copiar para client/.env.local para desenvolvimento local.
+          #
+          # Estes dois valores estão em Supabase → Project Settings → API.
+          # A chave anónima é pública por natureza: vai dentro do bundle e qualquer
+          # visitante a consegue ler. Quem protege os dados é o Row Level Security
+          # definido em supabase/02_policies.sql.
+          #
+          # NUNCA colocar aqui a service_role key. Essa ignora todas as políticas de
+          # segurança e num site estático ficaria exposta a toda a gente.
+
+          VITE_SUPABASE_URL=https://xxxxxxxxxxxxxxxx.supabase.co
+          VITE_SUPABASE_ANON_KEY=
+          EOF
+          git add client/.env.example
+
+          # 4. Este workflow apaga-se a si próprio
+          git rm -q .github/workflows/arrumar.yml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Organizar ficheiros na estrutura de pastas do projeto"
+          git push
