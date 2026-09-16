@@ -10,6 +10,7 @@ permissions:
   pages: write
   id-token: write
 
+# Um deploy de cada vez; não cancela o que já está a correr.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -21,8 +22,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
@@ -31,17 +30,21 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Verificacao de tipos
+      - name: Verificação de tipos
         run: pnpm check
 
       - name: Build
         env:
+          # Num site de projeto o caminho é /<repositório>/.
           BASE_PATH: /${{ github.event.repository.name }}/
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
         run: pnpm build
 
       - name: SPA fallback
+        # O GitHub Pages não reescreve rotas para o index.html. Servir o mesmo
+        # conteúdo em 404.html faz com que /operation-detail/12 funcione ao ser
+        # aberto diretamente ou recarregado.
         run: cp dist/index.html dist/404.html
 
       - name: Impedir o processamento pelo Jekyll
