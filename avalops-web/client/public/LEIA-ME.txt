@@ -1,6 +1,0 @@
-Colocar aqui o ficheiro do logótipo, com este nome exato:
-
-    gioe-logo.webp
-
-É usado no ecrã de entrada, no cabeçalho da aplicação e nas folhas de impressão.
-Sem ele a aplicação funciona na mesma; o espaço do logótipo fica apenas vazio.
