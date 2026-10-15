@@ -1,21 +1,25 @@
 -- =============================================================================
 -- GIOE — Primeiro administrador
 --
--- Na aplicação original o administrador estava escrito no código
--- (server/auth.ts fazia `input.email === "teixeira.vls@gnr.pt"`). Aqui é uma
+-- Na aplicação original o administrador estava escrito no código. Aqui é uma
 -- operação explícita: regista-se a conta pela aplicação, como qualquer militar,
 -- e depois corre-se este script uma vez no SQL Editor do Supabase.
 --
--- Substituir o email abaixo antes de correr.
+-- Substituir o email abaixo antes de correr. O endereço real NÃO deve ser
+-- gravado no repositório: alterar apenas na cópia colada no SQL Editor.
 -- =============================================================================
 
 do $$
 declare
-  alvo constant text := 'teixeira.vls@gnr.pt';  -- <<< alterar aqui
+  alvo constant text := 'nome.apelido@gnr.pt';  -- <<< alterar aqui (só no SQL Editor)
   n    integer;
 begin
+  if alvo = 'nome.apelido@gnr.pt' then
+    raise exception 'Substitua o email de exemplo pelo do primeiro administrador antes de correr o script.';
+  end if;
+
   update public.profiles
-     set "role" = 'admin', approved = 1
+     set "role" = 'admin', approved = 1, active = 1
    where lower(email) = lower(alvo);
 
   get diagnostics n = row_count;

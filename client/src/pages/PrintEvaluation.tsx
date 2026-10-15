@@ -19,6 +19,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FormHeader } from "@/components/FormHeader";
+import { MarcasImpressao } from "@/components/Classificacao";
+import { useAuth } from "@/hooks/useAuth";
+import { formatarData } from "@/lib/datas";
+import { NEOPS, NeopBadge } from "@/lib/neop";
 import { toast } from "sonner";
 
 const TIPO_LABELS: Record<string, string> = {
@@ -48,21 +52,11 @@ const QTD_LABELS: Record<string, string> = {
   "4+": "4 ou mais suspeitos",
 };
 
-const NEOP_COLORS: Record<string, string> = {
-  "2º NEOP": "#1a472a",
-  "3º NEOP": "#b8860b",
-  "4º NEOP": "#8b0000",
-};
-
 const Bloco = ({ titulo, children }: { titulo?: string; children: React.ReactNode }) => (
-  <div className="bg-gray-50 rounded-xl p-5 mb-5 border-l-4" style={{ borderColor: "#1a472a" }}>
-    {titulo ? (
-      <div className="text-sm font-bold uppercase tracking-wider mb-4" style={{ color: "#1a472a" }}>
-        {titulo}
-      </div>
-    ) : null}
+  <section className="bg-ral-50 rounded-lg p-5 mb-5 border border-ral-200 border-l-4 border-l-ral-600 break-inside-avoid">
+    {titulo ? <h2 className="text-sm font-bold uppercase tracking-wider mb-4 text-ral-700">{titulo}</h2> : null}
     {children}
-  </div>
+  </section>
 );
 
 const Marca = ({ children }: { children: React.ReactNode }) => (
@@ -72,6 +66,7 @@ const Marca = ({ children }: { children: React.ReactNode }) => (
 export default function PrintEvaluation() {
   const { id } = useParams();
   const [, navigate] = useLocation();
+  const { user, isAdmin } = useAuth();
   const [isEditingNeop, setIsEditingNeop] = useState(false);
   const [selectedNeop, setSelectedNeop] = useState<string>("");
 
@@ -89,14 +84,12 @@ export default function PrintEvaluation() {
     { enabled: Number.isFinite(evaluationId) && evaluationId > 0 },
   );
 
-  const updateMutation = trpc.evaluations.update.useMutation({
+  const updateMutation = trpc.evaluations.atualizarNeop.useMutation({
     onSuccess: (result) => {
       toast.success(`NEOP atualizado para ${result.neop}.`);
       setIsEditingNeop(false);
-      utils.evaluations.getById.invalidate({ id: evaluationId });
-      utils.evaluations.list.invalidate();
-      utils.statistics.get.invalidate();
-      utils.statistics.neop4ByCter.invalidate();
+      void utils.evaluations.invalidate();
+      void utils.statistics.invalidate();
     },
     onError: (e) => toast.error("Erro ao atualizar: " + e.message),
   });
@@ -104,7 +97,7 @@ export default function PrintEvaluation() {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-10 h-10 animate-spin" style={{ color: "#1a472a" }} />
+        <Loader2 className="w-10 h-10 animate-spin text-ral-400" />
       </div>
     );
   }
@@ -113,7 +106,7 @@ export default function PrintEvaluation() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <p className="text-red-600 mb-4">Não foi possível carregar a avaliação.</p>
+          <p className="text-erro mb-4">Não foi possível carregar a avaliação.</p>
           <Button onClick={() => navigate("/")} variant="outline">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar
@@ -125,6 +118,7 @@ export default function PrintEvaluation() {
 
   const e = evaluation as Record<string, any>;
   const cter = cterDaAvaliacao(e);
+  const podeEditar = isAdmin || e.userId === user?.id;
 
   const marcado = (v: unknown) => Boolean(v) && v !== 0;
 
@@ -161,77 +155,80 @@ export default function PrintEvaluation() {
   // a partir dos critérios já gravados.
   const handleSaveNeop = () => {
     if (!selectedNeop) return;
-    updateMutation.mutate({ id: evaluation.id, neopManual: selectedNeop });
+    updateMutation.mutate({ id: evaluation.id, neopManual: selectedNeop === "calculado" ? null : selectedNeop });
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="no-print sticky top-0 bg-white border-b border-gray-200 shadow-sm z-10">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+    <div className="min-h-dvh bg-background print:bg-white">
+      <MarcasImpressao utilizador={user} recurso="evaluations" id={e.id} />
+      <div className="no-print sticky top-0 bg-white border-b border-ral-200 shadow-sm z-10">
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
           <Button onClick={() => navigate("/")} variant="outline" size="sm">
-            <ArrowLeft className="w-4 h-4 mr-2" />
+            <ArrowLeft className="w-4 h-4" />
             Voltar
           </Button>
           <div className="flex gap-2">
-            <Button
-              onClick={() => {
-                setSelectedNeop(e.neop || "");
-                setIsEditingNeop(true);
-              }}
-              variant="outline"
-              size="sm"
-            >
-              <Edit2 className="w-4 h-4 mr-2" />
-              Editar NEOP
-            </Button>
-            <Button onClick={() => window.print()} size="sm" style={{ background: "#1a472a" }}>
-              <Printer className="w-4 h-4 mr-2" />
+            {podeEditar && (
+              <Button
+                onClick={() => {
+                  setSelectedNeop(e.neopManual || "calculado");
+                  setIsEditingNeop(true);
+                }}
+                variant="outline"
+                size="sm"
+              >
+                <Edit2 className="w-4 h-4" />
+                Editar NEOP
+              </Button>
+            )}
+            <Button onClick={() => window.print()} size="sm">
+              <Printer className="w-4 h-4" />
               Imprimir
             </Button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto p-6">
-        <div id="form-container" className="bg-white p-8 rounded-lg print:rounded-none print:p-0">
-          <FormHeader subtitulo="Avaliação de Pedido de Apoio" />
+      <div className="max-w-4xl mx-auto p-4 sm:p-6 print:p-0">
+        <div id="form-container" className="bg-white p-6 sm:p-8 rounded-lg border border-ral-200 print:border-0 print:rounded-none print:p-0">
+          <FormHeader subtitulo={`Avaliação de Pedido de Apoio n.º ${e.id}`} />
 
           <Bloco titulo="POC e despacho">
             <div className="grid grid-cols-3 gap-4 mb-4">
               {e.pocPosto && (
                 <div>
-                  <div className="text-xs font-semibold text-gray-600 mb-1">Posto/função</div>
+                  <div className="text-xs font-semibold text-ral-600 mb-1">Posto/função</div>
                   <div className="text-sm">{e.pocPosto}</div>
                 </div>
               )}
               {e.pocNome && (
                 <div>
-                  <div className="text-xs font-semibold text-gray-600 mb-1">Nome</div>
+                  <div className="text-xs font-semibold text-ral-600 mb-1">Nome</div>
                   <div className="text-sm">{e.pocNome}</div>
                 </div>
               )}
               {e.pocContacto && (
                 <div>
-                  <div className="text-xs font-semibold text-gray-600 mb-1">Contacto</div>
+                  <div className="text-xs font-semibold text-ral-600 mb-1">Contacto</div>
                   <div className="text-sm">{e.pocContacto}</div>
                 </div>
               )}
             </div>
             {e.nuipc && (
               <div className="mb-4">
-                <div className="text-xs font-semibold text-gray-600 mb-1">NUIPC</div>
+                <div className="text-xs font-semibold text-ral-600 mb-1">NUIPC</div>
                 <div className="text-sm">{e.nuipc}</div>
               </div>
             )}
             {e.despacho && (
               <div className="mb-4">
-                <div className="text-xs font-semibold text-gray-600 mb-1">Despacho</div>
+                <div className="text-xs font-semibold text-ral-600 mb-1">Despacho</div>
                 <div className="text-sm whitespace-pre-wrap">{e.despacho}</div>
               </div>
             )}
             {cter && (
               <div>
-                <div className="text-xs font-semibold text-gray-600 mb-1">CTer requerente</div>
+                <div className="text-xs font-semibold text-ral-600 mb-1">CTer requerente</div>
                 <div className="text-sm">{cter}</div>
               </div>
             )}
@@ -250,7 +247,7 @@ export default function PrintEvaluation() {
                 <div className="mt-4 pt-4 border-t">
                   <div className="text-sm font-semibold mb-3">Identificação dos suspeitos</div>
                   {suspects.map((suspect: any, index: number) => (
-                    <div key={suspect.id ?? index} className="mb-4 p-3 bg-white rounded border border-gray-200">
+                    <div key={suspect.id ?? index} className="mb-4 p-3 bg-white rounded border border-ral-200 break-inside-avoid">
                       <div className="text-sm font-semibold mb-2">Suspeito {index + 1}</div>
                       {suspect.nome && (
                         <div className="text-sm">
@@ -350,7 +347,7 @@ export default function PrintEvaluation() {
 
           {e.observacoes && (
             <Bloco>
-              <div className="text-sm font-semibold text-gray-600 mb-2">Observações</div>
+              <div className="text-sm font-semibold text-ral-600 mb-2">Observações</div>
               <div className="text-sm whitespace-pre-wrap">{e.observacoes}</div>
             </Bloco>
           )}
@@ -358,43 +355,36 @@ export default function PrintEvaluation() {
           <Bloco titulo="Avaliação">
             <div className="grid grid-cols-3 gap-4 mb-4">
               <div>
-                <div className="text-xs font-semibold text-gray-600 mb-1">Pontuação</div>
-                <div className="text-2xl font-bold" style={{ color: "#1a472a" }}>
-                  {e.pontuacao}
-                </div>
+                <div className="text-xs font-semibold text-ral-600 mb-1">Pontuação</div>
+                <div className="text-2xl font-bold text-ral-800">{e.pontuacao}</div>
               </div>
               <div>
-                <div className="text-xs font-semibold text-gray-600 mb-1">NEOP</div>
-                <div
-                  className="px-3 py-1 rounded-full text-white text-sm font-bold inline-block"
-                  style={{ background: NEOP_COLORS[e.neop] || "#1a472a" }}
-                >
-                  {e.neop}
-                </div>
+                <div className="text-xs font-semibold text-ral-600 mb-1">NEOP</div>
+                <NeopBadge neop={e.neop} className="text-sm px-3 py-1" />
                 {e.neopManual ? (
-                  <div className="text-xs text-gray-500 mt-1">Classificação definida manualmente</div>
+                  <div className="text-xs text-ral-500 mt-1">Classificação definida manualmente</div>
                 ) : null}
               </div>
               <div>
-                <div className="text-xs font-semibold text-gray-600 mb-1">Data</div>
-                <div className="text-sm">{e.dataAvaliacao || "—"}</div>
+                <div className="text-xs font-semibold text-ral-600 mb-1">Data</div>
+                <div className="text-sm">{formatarData(e.dataAvaliacao)}</div>
               </div>
             </div>
             {e.avaliador && (
               <div className="mb-4">
-                <div className="text-xs font-semibold text-gray-600 mb-1">Avaliador</div>
+                <div className="text-xs font-semibold text-ral-600 mb-1">Avaliador</div>
                 <div className="text-sm">{e.avaliador}</div>
               </div>
             )}
             {e.outrasObservacoes && (
               <div className="mb-4">
-                <div className="text-xs font-semibold text-gray-600 mb-1">Outras observações</div>
+                <div className="text-xs font-semibold text-ral-600 mb-1">Outras observações</div>
                 <div className="text-sm whitespace-pre-wrap">{e.outrasObservacoes}</div>
               </div>
             )}
             {e.parecer && (
               <div>
-                <div className="text-xs font-semibold text-gray-600 mb-1">Parecer</div>
+                <div className="text-xs font-semibold text-ral-600 mb-1">Parecer</div>
                 <div className="text-sm whitespace-pre-wrap">
                   {e.parecer.replace(/^\s*\[[^\]]+\]\s*/, "")}
                 </div>
@@ -404,16 +394,7 @@ export default function PrintEvaluation() {
         </div>
       </div>
 
-      <style>{`
-        @media print {
-          body { background: white; margin: 0; padding: 0; }
-          #form-container { box-shadow: none; border: none; page-break-inside: avoid; }
-          .bg-gray-50 { background: #f9fafb !important; }
-          .border-l-4 { border-left: 4px solid #1a472a !important; }
-          .rounded-xl { border-radius: 0; }
-          .max-w-4xl { max-width: 100%; }
-        }
-      `}</style>
+
 
       <Dialog open={isEditingNeop} onOpenChange={setIsEditingNeop}>
         <DialogContent>
@@ -421,18 +402,21 @@ export default function PrintEvaluation() {
             <DialogTitle>Editar NEOP</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">NEOP atual: {e.neop}</p>
+            <p className="text-sm text-ral-600">NEOP atual: {e.neop}</p>
             <Select value={selectedNeop} onValueChange={setSelectedNeop}>
               <SelectTrigger>
                 <SelectValue placeholder="Selecione um NEOP" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="2º NEOP">2º NEOP</SelectItem>
-                <SelectItem value="3º NEOP">3º NEOP</SelectItem>
-                <SelectItem value="4º NEOP">4º NEOP</SelectItem>
+                <SelectItem value="calculado">Usar o NEOP calculado</SelectItem>
+                {NEOPS.map((n) => (
+                  <SelectItem key={n} value={n}>
+                    {n}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-ral-500">
               A pontuação não muda: continua a resultar dos critérios preenchidos. Só a
               classificação é substituída.
             </p>
@@ -444,7 +428,6 @@ export default function PrintEvaluation() {
             <Button
               onClick={handleSaveNeop}
               disabled={updateMutation.isPending || !selectedNeop}
-              style={{ background: "#1a472a" }}
             >
               {updateMutation.isPending ? "A guardar..." : "Guardar"}
             </Button>

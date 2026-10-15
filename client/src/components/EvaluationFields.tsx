@@ -13,6 +13,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { User, AlertTriangle, Crosshair, MapPin, ClipboardList } from "lucide-react";
 import { SuspectForm, type Suspect } from "@/components/SuspectForm";
 import { CTERS, avaliarFormulario, type FormState } from "@/pages/evaluationFormModel";
+import { corNeop } from "@/lib/neop";
 
 /**
  * Os campos da avaliação, partilhados entre a criação e a edição.
@@ -23,18 +24,16 @@ import { CTERS, avaliarFormulario, type FormState } from "@/pages/evaluationForm
  */
 
 const SectionTitle = ({ icon, title }: { icon: React.ReactNode; title: string }) => (
-  <div className="flex items-center gap-2 mb-4">
-    <span style={{ color: "#1a472a" }}>{icon}</span>
-    <h3 className="text-sm font-bold uppercase tracking-wider" style={{ color: "#1a472a" }}>
-      {title}
-    </h3>
+  <div className="flex items-center gap-2 mb-4 text-ral-700">
+    <span aria-hidden="true">{icon}</span>
+    <h3 className="text-sm font-bold uppercase tracking-wider">{title}</h3>
   </div>
 );
 
 const Section = ({ children }: { children: React.ReactNode }) => (
-  <div className="bg-gray-50 rounded-xl p-5 mb-5 border-l-4" style={{ borderColor: "#1a472a" }}>
+  <section className="bg-ral-50 rounded-lg p-5 mb-5 border border-ral-200 border-l-4 border-l-ral-600">
     {children}
-  </div>
+  </section>
 );
 
 const CheckItem = ({
@@ -53,9 +52,9 @@ const CheckItem = ({
       id={id}
       checked={checked}
       onCheckedChange={(v) => onCheckedChange(v === true)}
-      className="data-[state=checked]:bg-[#1a472a] data-[state=checked]:border-[#1a472a]"
+      className="border-input bg-white data-[state=checked]:bg-ral-600 data-[state=checked]:border-ral-600"
     />
-    <label htmlFor={id} className="text-sm cursor-pointer text-gray-700">
+    <label htmlFor={id} className="text-sm cursor-pointer text-ral-800">
       {label}
     </label>
   </div>
@@ -83,7 +82,8 @@ export function EvaluationFields({
   suspects,
   onSuspectsChange,
 }: EvaluationFieldsProps) {
-  const { pontuacao, neop, complexidade, descricao, neopColor } = avaliarFormulario(form);
+  const { pontuacao, neop, complexidade, descricao, largura, neopColor, semTipoCriminal } =
+    avaliarFormulario(form);
 
   const toggleCrime = (tipo: string, marcado: boolean) => {
     if (marcado) {
@@ -105,22 +105,23 @@ export function EvaluationFields({
         />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-1 block">NUIPC</Label>
+            <Label className="text-sm font-semibold text-ral-700 mb-1 block">NUIPC</Label>
             <Input
               placeholder="Número de identificação"
               value={form.nuipc}
               onChange={(e) => set("nuipc", e.target.value)}
-              className="border-2 focus:border-[#1a472a]"
+             
             />
           </div>
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-1 block">
+            <Label className="text-sm font-semibold text-ral-700 mb-1 block">
               Entidade solicitadora
             </Label>
             <div className="space-y-2">
               {["CO", "CTer", "PSP", "PJ", "Outra"].map((entity) => (
                 <div key={entity} className="flex items-center">
                   <Checkbox
+                    className="border-input bg-white data-[state=checked]:bg-ral-600 data-[state=checked]:border-ral-600"
                     id={`entity-${entity}`}
                     checked={form.entidadeSolicitadora === entity}
                     onCheckedChange={() =>
@@ -140,31 +141,31 @@ export function EvaluationFields({
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-1 block">Ref. Filedoc</Label>
+            <Label className="text-sm font-semibold text-ral-700 mb-1 block">Ref. Filedoc</Label>
             <Input
               placeholder="Referência do Filedoc"
               value={form.refFiledoc}
               onChange={(e) => set("refFiledoc", e.target.value)}
-              className="border-2 focus:border-[#1a472a]"
+             
             />
           </div>
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-1 block">Email</Label>
+            <Label className="text-sm font-semibold text-ral-700 mb-1 block">Email</Label>
             <Input
               type="email"
               placeholder="Email"
               value={form.email}
               onChange={(e) => set("email", e.target.value)}
-              className="border-2 focus:border-[#1a472a]"
+             
             />
           </div>
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-1 block">Ordem verbal</Label>
+            <Label className="text-sm font-semibold text-ral-700 mb-1 block">Ordem verbal</Label>
             <Input
               placeholder="Ordem verbal"
               value={form.ordemVerbal}
               onChange={(e) => set("ordemVerbal", e.target.value)}
-              className="border-2 focus:border-[#1a472a]"
+             
             />
           </div>
         </div>
@@ -174,48 +175,48 @@ export function EvaluationFields({
         <SectionTitle icon={<User className="w-4 h-4" />} title="POC e despacho" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-1 block">Posto/função</Label>
+            <Label className="text-sm font-semibold text-ral-700 mb-1 block">Posto/função</Label>
             <Input
               placeholder="Ex.: Sargento"
               value={form.pocPosto}
               onChange={(e) => set("pocPosto", e.target.value)}
-              className="border-2 focus:border-[#1a472a]"
+             
             />
           </div>
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-1 block">Nome</Label>
+            <Label className="text-sm font-semibold text-ral-700 mb-1 block">Nome</Label>
             <Input
               placeholder="Nome completo"
               value={form.pocNome}
               onChange={(e) => set("pocNome", e.target.value)}
-              className="border-2 focus:border-[#1a472a]"
+             
             />
           </div>
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-1 block">Contacto</Label>
+            <Label className="text-sm font-semibold text-ral-700 mb-1 block">Contacto</Label>
             <Input
               placeholder="Telefone ou email"
               value={form.pocContacto}
               onChange={(e) => set("pocContacto", e.target.value)}
-              className="border-2 focus:border-[#1a472a]"
+             
             />
           </div>
         </div>
         <div className="mb-4">
-          <Label className="text-sm font-semibold text-gray-600 mb-1 block">Despacho</Label>
+          <Label className="text-sm font-semibold text-ral-700 mb-1 block">Despacho</Label>
           <Textarea
             placeholder="Registo do despacho..."
             value={form.despacho}
             onChange={(e) => set("despacho", e.target.value)}
-            className="min-h-[80px] border-2 focus:border-[#1a472a]"
+            className="min-h-[80px]"
           />
         </div>
         <div>
-          <Label className="text-sm font-semibold text-gray-600 mb-1 block">
+          <Label className="text-sm font-semibold text-ral-700 mb-1 block">
             Comando Territorial requerente
           </Label>
           <Select value={form.cterRequerente} onValueChange={(v) => set("cterRequerente", v)}>
-            <SelectTrigger className="border-2 focus:border-[#1a472a]">
+            <SelectTrigger>
               <SelectValue placeholder="Selecione um CTer" />
             </SelectTrigger>
             <SelectContent>
@@ -233,7 +234,7 @@ export function EvaluationFields({
         <SectionTitle icon={<AlertTriangle className="w-4 h-4" />} title="Suspeito(s)" />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-2 block">Mandados</Label>
+            <Label className="text-sm font-semibold text-ral-700 mb-2 block">Mandados</Label>
             <CheckItem
               id="mandadoDetencao"
               label="Mandado de detenção (+5)"
@@ -248,14 +249,14 @@ export function EvaluationFields({
             />
           </div>
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-2 block">
+            <Label className="text-sm font-semibold text-ral-700 mb-2 block">
               Quantidade de suspeitos
             </Label>
             <Select
               value={form.quantidadeSuspeitos}
               onValueChange={(v) => set("quantidadeSuspeitos", v)}
             >
-              <SelectTrigger className="border-2 focus:border-[#1a472a]">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -276,7 +277,7 @@ export function EvaluationFields({
         <SectionTitle icon={<Crosshair className="w-4 h-4" />} title="Atividade criminal" />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-2 block">Modalidade</Label>
+            <Label className="text-sm font-semibold text-ral-700 mb-2 block">Modalidade</Label>
             <CheckItem
               id="isolado"
               label="Isolado (+2)"
@@ -297,7 +298,7 @@ export function EvaluationFields({
             />
           </div>
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-2 block">
+            <Label className="text-sm font-semibold text-ral-700 mb-2 block">
               Tipo de atividade
             </Label>
             <div className="space-y-2">
@@ -311,11 +312,16 @@ export function EvaluationFields({
                 />
               ))}
             </div>
+            {semTipoCriminal ? (
+              <p className="mt-2 text-xs font-semibold text-aviso" role="note">
+                Nenhum tipo marcado: o cálculo conta como “Outro” (+4).
+              </p>
+            ) : null}
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-2 block">
+            <Label className="text-sm font-semibold text-ral-700 mb-2 block">
               Antecedentes criminais
             </Label>
             <CheckItem
@@ -338,7 +344,7 @@ export function EvaluationFields({
             />
           </div>
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-2 block">
+            <Label className="text-sm font-semibold text-ral-700 mb-2 block">
               Antecedentes contra FSS
             </Label>
             <RadioGroup
@@ -347,14 +353,14 @@ export function EvaluationFields({
               className="gap-2"
             >
               <div className="flex items-center gap-2">
-                <RadioGroupItem value="sim" id="fssSim" className="border-[#1a472a] text-[#1a472a]" />
-                <label htmlFor="fssSim" className="text-sm cursor-pointer text-gray-700">
+                <RadioGroupItem value="sim" id="fssSim" className="border-ral-600 text-ral-600 bg-white" />
+                <label htmlFor="fssSim" className="text-sm cursor-pointer text-ral-800">
                   Sim (+9)
                 </label>
               </div>
               <div className="flex items-center gap-2">
-                <RadioGroupItem value="nao" id="fssNao" className="border-[#1a472a] text-[#1a472a]" />
-                <label htmlFor="fssNao" className="text-sm cursor-pointer text-gray-700">
+                <RadioGroupItem value="nao" id="fssNao" className="border-ral-600 text-ral-600 bg-white" />
+                <label htmlFor="fssNao" className="text-sm cursor-pointer text-ral-800">
                   Não
                 </label>
               </div>
@@ -367,11 +373,11 @@ export function EvaluationFields({
         <SectionTitle icon={<Crosshair className="w-4 h-4" />} title="Meios" />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-2 block">
+            <Label className="text-sm font-semibold text-ral-700 mb-2 block">
               Posse de arma de fogo
             </Label>
             <Select value={form.posseArma} onValueChange={(v) => set("posseArma", v)}>
-              <SelectTrigger className="border-2 focus:border-[#1a472a]">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -382,11 +388,11 @@ export function EvaluationFields({
             </Select>
           </div>
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-2 block">
+            <Label className="text-sm font-semibold text-ral-700 mb-2 block">
               Uso efetivo de arma de fogo
             </Label>
             <Select value={form.usoArma} onValueChange={(v) => set("usoArma", v)}>
-              <SelectTrigger className="border-2 focus:border-[#1a472a]">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -402,7 +408,7 @@ export function EvaluationFields({
         <SectionTitle icon={<MapPin className="w-4 h-4" />} title="Local" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-2 block">Tipologia</Label>
+            <Label className="text-sm font-semibold text-ral-700 mb-2 block">Tipologia</Label>
             <CheckItem
               id="apartamento"
               label="Apartamento (+3)"
@@ -441,7 +447,7 @@ export function EvaluationFields({
             />
           </div>
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-2 block">Contexto</Label>
+            <Label className="text-sm font-semibold text-ral-700 mb-2 block">Contexto</Label>
             <CheckItem
               id="isoladoLocal"
               label="Isolado (+2)"
@@ -468,7 +474,7 @@ export function EvaluationFields({
             />
           </div>
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-2 block">
+            <Label className="text-sm font-semibold text-ral-700 mb-2 block">
               Características de segurança
             </Label>
             <CheckItem
@@ -494,12 +500,12 @@ export function EvaluationFields({
       </Section>
 
       <Section>
-        <Label className="text-sm font-semibold text-gray-600 mb-1 block">Observações</Label>
+        <Label className="text-sm font-semibold text-ral-700 mb-1 block">Observações</Label>
         <Textarea
           placeholder="Observações sobre o local..."
           value={form.observacoes}
           onChange={(e) => set("observacoes", e.target.value)}
-          className="min-h-[80px] border-2 focus:border-[#1a472a]"
+          className="min-h-[80px]"
         />
       </Section>
 
@@ -507,31 +513,31 @@ export function EvaluationFields({
         <SectionTitle icon={<ClipboardList className="w-4 h-4" />} title="Avaliação" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-1 block">
+            <Label className="text-sm font-semibold text-ral-700 mb-1 block">
               Avaliador (posto e nome)
             </Label>
             <Input
               placeholder="Posto e nome do avaliador"
               value={form.avaliador}
               onChange={(e) => set("avaliador", e.target.value)}
-              className="border-2 focus:border-[#1a472a]"
+             
             />
           </div>
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-1 block">Data</Label>
+            <Label className="text-sm font-semibold text-ral-700 mb-1 block">Data</Label>
             <Input
               type="date"
               value={form.dataAvaliacao}
               onChange={(e) => set("dataAvaliacao", e.target.value)}
-              className="border-2 focus:border-[#1a472a]"
+             
             />
           </div>
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-1 block">
+            <Label className="text-sm font-semibold text-ral-700 mb-1 block">
               NEOP manual (sobrepõe-se ao calculado)
             </Label>
             <Select value={form.neopManual} onValueChange={(v) => set("neopManual", v)}>
-              <SelectTrigger className="border-2 focus:border-[#1a472a]">
+              <SelectTrigger>
                 <SelectValue placeholder="Usar NEOP calculado" />
               </SelectTrigger>
               <SelectContent>
@@ -544,7 +550,7 @@ export function EvaluationFields({
               <button
                 type="button"
                 onClick={() => set("neopManual", "")}
-                className="text-xs text-gray-500 underline mt-1"
+                className="text-xs text-ral-600 underline underline-offset-2 mt-1"
               >
                 Voltar ao NEOP calculado
               </button>
@@ -552,76 +558,65 @@ export function EvaluationFields({
           </div>
         </div>
         <div className="mb-4">
-          <Label className="text-sm font-semibold text-gray-600 mb-1 block">
+          <Label className="text-sm font-semibold text-ral-700 mb-1 block">
             Outras observações
           </Label>
           <Textarea
             placeholder="Outras observações..."
             value={form.outrasObservacoes}
             onChange={(e) => set("outrasObservacoes", e.target.value)}
-            className="min-h-[80px] border-2 focus:border-[#1a472a]"
+            className="min-h-[80px]"
           />
         </div>
         <div>
-          <Label className="text-sm font-semibold text-gray-600 mb-1 block">Parecer</Label>
+          <Label className="text-sm font-semibold text-ral-700 mb-1 block">Parecer</Label>
           <Textarea
             placeholder="Parecer do avaliador..."
             value={form.parecer}
             onChange={(e) => set("parecer", e.target.value)}
-            className="min-h-[80px] border-2 focus:border-[#1a472a]"
+            className="min-h-[80px]"
           />
         </div>
       </Section>
 
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div
-          className="text-white text-center py-5 px-4 rounded-xl"
-          style={{ background: "linear-gradient(135deg, #1a472a 0%, #2d5a3d 100%)" }}
-        >
-          <p className="text-xs uppercase tracking-widest opacity-80 mb-1">Pontuação total</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6" aria-live="polite">
+        <div className="bg-gioe text-white text-center py-5 px-4 rounded-lg">
+          <p className="text-xs uppercase tracking-widest text-ral-100/90 mb-1">Pontuação total</p>
           <p className="text-4xl font-bold">
             {pontuacao}
-            <span className="text-xl font-normal opacity-70">/100</span>
+            <span className="text-xl font-normal text-ral-200">/100</span>
           </p>
         </div>
-        <div
-          className="text-white text-center py-5 px-4 rounded-xl"
-          style={{ background: `linear-gradient(135deg, ${neopColor} 0%, ${neopColor}cc 100%)` }}
-        >
-          <p className="text-xs uppercase tracking-widest opacity-80 mb-1">
+        <div className="text-white text-center py-5 px-4 rounded-lg" style={{ background: neopColor }}>
+          <p className="text-xs uppercase tracking-widest text-white/85 mb-1">
             {form.neopManual ? "Classificação manual" : "Classificação recomendada"}
           </p>
           <p className="text-3xl font-bold">{neop}</p>
         </div>
       </div>
 
-      <div className="bg-white border-2 border-gray-200 rounded-xl p-4 mb-6">
+      <div className="bg-white border border-ral-200 rounded-lg p-4 mb-6">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-gray-700">Grau de complexidade</p>
-          <span
-            className="text-sm font-bold px-3 py-1 rounded-full"
-            style={{
-              background:
-                neop === "4º NEOP" ? "#fee2e2" : neop === "3º NEOP" ? "#fef3c7" : "#dcfce7",
-              color: neop === "4º NEOP" ? "#991b1b" : neop === "3º NEOP" ? "#92400e" : "#166534",
-            }}
-          >
+          <p className="text-sm font-semibold text-ral-800">Grau de complexidade</p>
+          <span className={`text-sm font-bold px-3 py-1 rounded-full ${corNeop(neop).classeSuave}`}>
             {complexidade}
           </span>
         </div>
-        <div className="w-full bg-gray-200 rounded-full h-2 mb-3 overflow-hidden">
+        <div
+          className="w-full bg-ral-100 rounded-full h-2 mb-3 overflow-hidden"
+          role="meter"
+          aria-label="Grau de complexidade"
+          aria-valuenow={neop === "4º NEOP" ? 3 : neop === "3º NEOP" ? 2 : 1}
+          aria-valuemin={1}
+          aria-valuemax={3}
+        >
           <div
             className="h-full transition-all duration-300 rounded-full"
-            style={{
-              width: neop === "4º NEOP" ? "100%" : neop === "3º NEOP" ? "66%" : "33%",
-              background:
-                neop === "4º NEOP" ? "#dc2626" : neop === "3º NEOP" ? "#f59e0b" : "#22c55e",
-            }}
+            style={{ width: largura, background: neopColor }}
           />
         </div>
-        <p className="text-sm text-gray-600">{descricao}</p>
+        <p className="text-sm text-ral-600">{descricao}</p>
       </div>
-
     </>
   );
 }

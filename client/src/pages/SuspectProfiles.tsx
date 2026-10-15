@@ -3,8 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
-import { Badge } from "@/components/ui/badge";
-import { Search, Users } from "lucide-react";
+import { Search } from "lucide-react";
 
 /**
  * Perfis de suspeitos, agregados a partir da tabela `suspects`.
@@ -20,10 +19,7 @@ export default function SuspectProfiles() {
   const [page, setPage] = useState(0);
   const pageSize = 20;
 
-  const { data: suspects = [], isLoading } = trpc.suspectProfiles.list.useQuery({
-    limit: 1000,
-    offset: 0,
-  });
+  const { data: suspects = [], isLoading } = trpc.suspectProfiles.list.useQuery();
 
   const filteredSuspects = useMemo(() => {
     const termo = searchTerm.trim().toLowerCase();
@@ -41,15 +37,10 @@ export default function SuspectProfiles() {
   const totalPages = Math.ceil(filteredSuspects.length / pageSize);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Perfis de Suspeitos</h1>
-          <p className="text-muted-foreground mt-2">
-            Suspeitos registados nas avaliações e respetivo histórico
-          </p>
-        </div>
-        <Users className="h-8 w-8 text-muted-foreground" />
+    <div className="space-y-6 max-w-7xl mx-auto">
+      <div>
+        <h2 className="text-xl font-bold text-ral-800">Perfis de suspeitos</h2>
+        <p className="text-sm text-ral-500">Suspeitos registados nas avaliações e respetivo histórico</p>
       </div>
 
       <Card>
@@ -58,6 +49,7 @@ export default function SuspectProfiles() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Procurar por nome, NIF ou CC..."
+              aria-label="Procurar suspeito por nome, NIF ou CC"
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
@@ -97,7 +89,9 @@ export default function SuspectProfiles() {
                     </p>
                   </div>
                   {suspect.neop4Count > 0 && (
-                    <Badge variant="destructive">{suspect.neop4Count} × 4º NEOP</Badge>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-neop-4 text-white whitespace-nowrap">
+                      {suspect.neop4Count} × 4º NEOP
+                    </span>
                   )}
                 </div>
               </CardHeader>

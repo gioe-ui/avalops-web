@@ -6,15 +6,28 @@
  * assinatura e o formato de resposta foram mantidos para que as páginas não
  * precisem de ser reescritas.
  *
- * A autorização já não vive aqui — vive nas políticas de Row Level Security
- * (supabase/02_policies.sql). Uma verificação feita neste ficheiro seria apenas
- * conveniência de interface: qualquer pessoa pode chamar a API do Supabase
- * diretamente. Onde este ficheiro verifica papéis, é para esconder botões, não
- * para proteger dados.
+ * A autorização já não vive aqui — vive nas políticas de Row Level Security e
+ * nos triggers (supabase/02_policies.sql e 05_seguranca.sql). Uma verificação
+ * feita neste ficheiro seria apenas conveniência de interface: qualquer pessoa
+ * pode chamar a API do Supabase diretamente.
+ *
+ * Uma particularidade do RLS que este ficheiro trata: um UPDATE ou DELETE sobre
+ * uma linha que o utilizador não pode alterar NÃO dá erro — simplesmente não
+ * afeta nada. Por isso as escritas pedem de volta as linhas afetadas e falham
+ * se não houver nenhuma; de outro modo a interface diria "eliminado" sem nada
+ * ter sido eliminado.
  */
-import { supabase, unwrap } from "./supabase";
-import { calcScore } from "./scoring";
-import type { ScoringInput } from "./scoring";
+import { createClient } from "@supabase/supabase-js";
+import {
+  concluirRecuperacao,
+  inicializacao,
+  marcarAtividade,
+  supabase,
+  terminarSessaoLocal,
+  traduzirErro,
+  unwrap,
+} from "./supabase";
+import { fimDoDiaExclusivo, inicioDoDia } from "./datas";
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -24,6 +37,7 @@ export interface Profile {
   email: string;
   role: "user" | "admin";
   approved: number;
+  active: number;
   phoneNumber: string | null;
   mecanographicNumber: string | null;
   rank: string | null;
@@ -43,26 +57,125 @@ export type Evaluation = Record<string, any> & {
 export type Operation = Record<string, any> & { id: number; evaluationId: number };
 export type Suspect = Record<string, any> & { id: number; evaluationId: number };
 
+export interface EstadoSessao {
+  perfil: Profile;
+  /** "aal1" depois da password, "aal2" depois do código do segundo fator. */
+  nivel: "aal1" | "aal2" | null;
+  /** Fator TOTP já confirmado, se existir. */
+  fatorId: string | null;
+}
+
+export interface RegistoAuditoria {
+  id: number;
+  occurredAt: string;
+  actorId: string | null;
+  actorEmail: string | null;
+  tableName: string;
+  recordId: string | null;
+  action: "INSERT" | "UPDATE" | "DELETE" | "EXPORT" | "PRINT";
+  oldData: Record<string, unknown> | null;
+  newData: Record<string, unknown> | null;
+}
+
+export const PASSWORD_MINIMA = 12;
+
+// ─── Utilitários ─────────────────────────────────────────────────────────────
+
+const PAGINA = 1000;
+
+/**
+ * Lê todas as linhas de uma consulta, página a página.
+ *
+ * A API do Supabase devolve no máximo um certo número de linhas por pedido
+ * (1000 por omissão). Sem isto, a partir desse número as listas e as
+ * estatísticas ficavam incompletas sem qualquer aviso. A consulta tem de pedir
+ * `count: "exact"` e uma ordenação estável.
+ */
+async function buscarTudo<T = any>(
+  consulta: (de: number, ate: number) => PromiseLike<{ data: any; error: any; count?: number | null }>,
+): Promise<T[]> {
+  const todos: T[] = [];
+  let de = 0;
+  let total: number | null = null;
+
+  for (;;) {
+    const { data, error, count } = await consulta(de, de + PAGINA - 1);
+    if (error) throw traduzirErro(error);
+    if (typeof count === "number") total = count;
+
+    const linhas = (data ?? []) as T[];
+    todos.push(...linhas);
+    de += linhas.length;
+
+    if (linhas.length === 0) break;
+    if (total !== null ? de >= total : linhas.length < PAGINA) break;
+  }
+
+  return todos;
+}
+
+/** Falha se a escrita não afetou nenhuma linha (bloqueada pelo RLS ou inexistente). */
+function exigirLinhas<T>(
+  resultado: { data: T[] | null; error: any },
+  mensagem = "Sem permissão para esta operação, ou o registo já não existe.",
+): T[] {
+  if (resultado.error) throw traduzirErro(resultado.error);
+  const linhas = resultado.data ?? [];
+  if (linhas.length === 0) throw new Error(mensagem);
+  return linhas;
+}
+
+async function utilizadorAtual() {
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) throw new Error("Sessão expirada. Entre novamente.");
+  return data.user;
+}
+
+function validarPassword(password: string) {
+  if (password.length < PASSWORD_MINIMA) {
+    throw new Error(`A password tem de ter pelo menos ${PASSWORD_MINIMA} caracteres.`);
+  }
+}
+
+const emailInstitucional = (email: string) => /^[^@\s]+@gnr\.pt$/i.test(email.trim());
+
 // ─── auth ────────────────────────────────────────────────────────────────────
 
 export const auth = {
-  /** Equivalente a `auth.me`: devolve o perfil do militar autenticado, ou null. */
-  async me(): Promise<Profile | null> {
+  /**
+   * Estado completo da sessão: perfil do militar e nível de autenticação.
+   * Devolve null sem sessão. Todas as páginas dependem disto antes de pedirem
+   * dados, e isto espera pela verificação de inatividade feita no arranque.
+   */
+  async sessao(): Promise<EstadoSessao | null> {
+    await inicializacao;
+
     const { data: sessionData } = await supabase.auth.getUser();
     const user = sessionData.user;
     if (!user) return null;
 
     const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
-    if (error) throw new Error(error.message);
+    if (error) throw traduzirErro(error);
 
-    // Sessão válida sem perfil: a conta foi eliminada ou rejeitada por um
-    // administrador enquanto a sessão estava aberta. Termina-a.
+    // Sessão válida sem perfil: o registo foi rejeitado por um administrador
+    // enquanto a sessão estava aberta. Termina-a.
     if (!data) {
-      await supabase.auth.signOut();
+      await terminarSessaoLocal();
       return null;
     }
 
-    return data as Profile;
+    const [{ data: nivel }, { data: fatores }] = await Promise.all([
+      supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+      supabase.auth.mfa.listFactors(),
+    ]);
+
+    const fator = fatores?.totp?.find((f) => f.status === "verified") ?? null;
+
+    return {
+      perfil: data as Profile,
+      nivel: (nivel?.currentLevel as EstadoSessao["nivel"]) ?? null,
+      fatorId: fator?.id ?? null,
+    };
   },
 
   async register(input: {
@@ -73,14 +186,19 @@ export const auth = {
     mecanographicNumber: string;
     rank: string;
   }) {
+    const email = input.email.trim().toLowerCase();
+    if (!emailInstitucional(email)) throw new Error("O registo está restrito a endereços @gnr.pt.");
+    validarPassword(input.password);
+
     const { data, error } = await supabase.auth.signUp({
-      email: input.email.trim().toLowerCase(),
+      email,
       password: input.password,
       options: {
+        emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
         data: {
-          name: input.name,
-          phoneNumber: input.phoneNumber,
-          mecanographicNumber: input.mecanographicNumber,
+          name: input.name.trim(),
+          phoneNumber: input.phoneNumber.trim(),
+          mecanographicNumber: input.mecanographicNumber.trim(),
           rank: input.rank,
         },
       },
@@ -95,17 +213,20 @@ export const auth = {
       if (/already registered|already exists/i.test(error.message)) {
         throw new Error("Email já registado.");
       }
-      throw new Error(error.message);
+      if (/password/i.test(error.message)) {
+        throw new Error("A password não cumpre as regras de segurança definidas no servidor.");
+      }
+      throw traduzirErro(error);
     }
 
-    return { success: true as const, user: data.user };
+    return { success: true as const, user: data.user, sessao: Boolean(data.session) };
   },
 
   async login(input: { email: string; password: string }) {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: input.email.trim().toLowerCase(),
-      password: input.password,
-    });
+    const email = input.email.trim().toLowerCase();
+    if (!emailInstitucional(email)) throw new Error("O email tem de terminar em @gnr.pt.");
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password: input.password });
 
     if (error) {
       if (/invalid login credentials/i.test(error.message)) {
@@ -114,22 +235,25 @@ export const auth = {
       if (/email not confirmed/i.test(error.message)) {
         throw new Error("Confirme o email antes de entrar. Verifique a sua caixa de correio.");
       }
-      throw new Error(error.message);
+      throw traduzirErro(error);
     }
 
-    if (data.user) {
-      await supabase
-        .from("profiles")
-        .update({ lastSignedIn: new Date().toISOString() })
-        .eq("id", data.user.id);
-    }
-
+    marcarAtividade();
     return { success: true as const, user: data.user };
   },
 
+  /**
+   * Regista a hora de entrada. Só é possível depois do segundo fator (o perfil
+   * não é editável em aal1); o valor gravado é a hora do servidor.
+   */
+  async registarEntrada() {
+    const user = await utilizadorAtual();
+    await supabase.from("profiles").update({ lastSignedIn: new Date().toISOString() }).eq("id", user.id);
+    return { success: true as const };
+  },
+
   async logout() {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw new Error(error.message);
+    await terminarSessaoLocal();
     return { success: true as const };
   },
 
@@ -139,40 +263,115 @@ export const auth = {
     mecanographicNumber?: string;
     rank?: string;
   }) {
-    const { data: sessionData } = await supabase.auth.getUser();
-    const user = sessionData.user;
-    if (!user) throw new Error("Sessão expirada.");
+    const user = await utilizadorAtual();
 
     const patch: Record<string, unknown> = {};
-    if (input.name !== undefined) patch.name = input.name;
-    if (input.phoneNumber !== undefined) patch.phoneNumber = input.phoneNumber;
-    if (input.mecanographicNumber !== undefined) patch.mecanographicNumber = input.mecanographicNumber;
+    if (input.name !== undefined) patch.name = input.name.trim();
+    if (input.phoneNumber !== undefined) patch.phoneNumber = input.phoneNumber.trim();
+    if (input.mecanographicNumber !== undefined) patch.mecanographicNumber = input.mecanographicNumber.trim();
     if (input.rank !== undefined) patch.rank = input.rank;
 
     if (Object.keys(patch).length === 0) throw new Error("Nenhum campo para atualizar.");
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .update(patch)
-      .eq("id", user.id)
-      .select()
-      .single();
-
-    if (error) throw new Error(error.message);
-    return { success: true as const, user: data as Profile };
+    const linhas = exigirLinhas(await supabase.from("profiles").update(patch).eq("id", user.id).select());
+    return { success: true as const, user: linhas[0] as Profile };
   },
 
-  async changePassword(newPassword: string) {
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    if (error) throw new Error(error.message);
+  /**
+   * Alterar a password pede a atual. A verificação é feita num cliente
+   * separado, sem guardar sessão, para não substituir a sessão em curso (que
+   * já passou o segundo fator).
+   */
+  async changePassword(input: { atual: string; nova: string }) {
+    const user = await utilizadorAtual();
+    validarPassword(input.nova);
+    if (input.atual === input.nova) throw new Error("A nova password tem de ser diferente da atual.");
+
+    const verificador = createClient(
+      import.meta.env.VITE_SUPABASE_URL,
+      import.meta.env.VITE_SUPABASE_ANON_KEY,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+          storageKey: "gioe-verificacao",
+        },
+      },
+    );
+
+    const { error: erroVerificacao } = await verificador.auth.signInWithPassword({
+      email: user.email!,
+      password: input.atual,
+    });
+    if (erroVerificacao) throw new Error("A password atual está incorreta.");
+    await verificador.auth.signOut({ scope: "local" });
+
+    const { error } = await supabase.auth.updateUser({ password: input.nova });
+    if (error) throw traduzirErro(error);
+    return { success: true as const };
+  },
+
+  /** Define a nova password depois de abrir a ligação de recuperação. */
+  async definirNovaPassword(nova: string) {
+    validarPassword(nova);
+    const { error } = await supabase.auth.updateUser({ password: nova });
+    if (error) throw traduzirErro(error);
+    concluirRecuperacao();
     return { success: true as const };
   },
 
   async requestPasswordReset(email: string) {
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+    const normalizado = email.trim().toLowerCase();
+    if (!emailInstitucional(normalizado)) throw new Error("Introduza o seu email @gnr.pt.");
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizado, {
       redirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
     });
-    if (error) throw new Error(error.message);
+    if (error) throw traduzirErro(error);
+    return { success: true as const };
+  },
+
+  // ─── Segundo fator (TOTP) ──────────────────────────────────────────────────
+
+  /** Inicia o registo de uma aplicação autenticadora. Devolve o QR code. */
+  async mfaIniciarRegisto() {
+    const { data: fatores } = await supabase.auth.mfa.listFactors();
+
+    // Registos anteriores não concluídos (por exemplo, QR code fechado a meio)
+    // impediriam um novo com o mesmo nome.
+    for (const fator of fatores?.all ?? []) {
+      if (fator.factor_type === "totp" && fator.status !== "verified") {
+        await supabase.auth.mfa.unenroll({ factorId: fator.id });
+      }
+    }
+
+    const { data, error } = await supabase.auth.mfa.enroll({
+      factorType: "totp",
+      friendlyName: "GIOE",
+      issuer: "GIOE",
+    });
+    if (error) throw traduzirErro(error);
+
+    return { factorId: data.id, qrCode: data.totp.qr_code, segredo: data.totp.secret };
+  },
+
+  async mfaConfirmarRegisto(input: { factorId: string; codigo: string }) {
+    const { error } = await supabase.auth.mfa.challengeAndVerify({
+      factorId: input.factorId,
+      code: input.codigo.trim(),
+    });
+    if (error) throw new Error("Código inválido ou expirado. Confirme a hora do telemóvel e tente de novo.");
+    marcarAtividade();
+    return { success: true as const };
+  },
+
+  async mfaVerificar(input: { factorId: string; codigo: string }) {
+    const { error } = await supabase.auth.mfa.challengeAndVerify({
+      factorId: input.factorId,
+      code: input.codigo.trim(),
+    });
+    if (error) throw new Error("Código inválido ou expirado.");
+    marcarAtividade();
     return { success: true as const };
   },
 };
@@ -239,126 +438,136 @@ export function cterDaAvaliacao(e: { cterRequerente?: string | null; parecer?: s
   return null;
 }
 
-/** Campos que o cliente nunca envia: são calculados pelo trigger na base de dados. */
-const CAMPOS_CALCULADOS = ["pontuacao", "neop", "updatedBy", "updatedAt", "createdAt", "id"];
-
-function limparEntrada(input: Record<string, any>) {
-  const out: Record<string, any> = {};
-  for (const [k, v] of Object.entries(input)) {
-    if (CAMPOS_CALCULADOS.includes(k)) continue;
-    if (v === undefined) continue;
-    out[k] = v;
-  }
-  return out;
-}
+type Suspeito = {
+  nome?: string | null;
+  dataNascimento?: string | null;
+  nacionalidade?: string | null;
+  nif?: string | null;
+  cc?: string | null;
+  morada?: string | null;
+  observacoes?: string | null;
+};
 
 export const evaluations = {
   async list(filters?: { neop?: string; avaliador?: string; cterRequerente?: string; userId?: string }) {
-    let query = supabase.from("evaluations").select(LIST_SELECT).order("createdAt", { ascending: false });
+    const rows = await buscarTudo((de, ate) => {
+      let query = supabase
+        .from("evaluations")
+        .select(LIST_SELECT, { count: "exact" })
+        .order("createdAt", { ascending: false })
+        .order("id", { ascending: false });
 
-    if (filters?.neop) query = query.ilike("neop", `%${filters.neop}%`);
-    if (filters?.avaliador) query = query.ilike("avaliador", `%${filters.avaliador}%`);
-    if (filters?.userId) query = query.eq("userId", filters.userId);
+      if (filters?.neop) query = query.eq("neop", filters.neop);
+      if (filters?.avaliador) query = query.ilike("avaliador", `%${filters.avaliador}%`);
+      if (filters?.userId) query = query.eq("userId", filters.userId);
 
-    // Aceita tanto a coluna própria como os registos antigos, em que o CTer só
-    // existia dentro do texto do parecer.
-    if (filters?.cterRequerente) {
-      const valor = filters.cterRequerente.replace(/[,()]/g, "");
-      query = query.or(`cterRequerente.eq.${valor},parecer.ilike.%${valor}%`);
-    }
+      // Aceita tanto a coluna própria como os registos antigos, em que o CTer
+      // só existia dentro do texto do parecer. Vírgulas, parênteses, aspas e
+      // barras mudariam a estrutura do filtro `or`, por isso são retirados.
+      if (filters?.cterRequerente) {
+        const valor = filters.cterRequerente.replace(/[,()"\\]/g, "");
+        query = query.or(`cterRequerente.eq.${valor},parecer.ilike.%${valor}%`);
+      }
 
-    const rows = unwrap(await query);
-    return (rows ?? []).map(flattenEvaluationRow);
+      return query.range(de, ate);
+    });
+
+    return rows.map(flattenEvaluationRow);
   },
 
   async getById(input: { id: number }) {
     const { data, error } = await supabase.from("evaluations").select("*").eq("id", input.id).maybeSingle();
-    if (error) throw new Error(error.message);
+    if (error) throw traduzirErro(error);
     if (!data) throw new Error("Avaliação não encontrada");
     return data as Evaluation;
   },
 
-  async create(input: Record<string, any>) {
-    const { data: sessionData } = await supabase.auth.getUser();
-    const user = sessionData.user;
-    if (!user) throw new Error("Sessão expirada.");
-
-    const { neopManual, ...resto } = input;
-
-    const { data, error } = await supabase
-      .from("evaluations")
-      .insert({ ...limparEntrada(resto), neopManual: neopManual || null, userId: user.id })
-      .select("id, pontuacao, neop")
-      .single();
-
-    if (error) throw new Error(error.message);
-
+  /**
+   * Cria ou altera uma avaliação juntamente com os seus suspeitos, numa só
+   * transação (função gioe_guardar_avaliacao). Ou fica tudo gravado, ou nada.
+   * A pontuação e o NEOP devolvidos são os calculados pela base de dados.
+   */
+  async guardar(input: { id?: number; dados: Record<string, any>; suspeitos: Suspeito[] }) {
+    const { data, error } = await supabase.rpc("gioe_guardar_avaliacao", {
+      p_id: input.id ?? null,
+      p_dados: input.dados,
+      p_suspeitos: input.suspeitos,
+    });
+    if (error) throw traduzirErro(error);
+    const resultado = data as { id: number; pontuacao: number; neop: string };
     return {
       success: true as const,
-      pontuacao: data.pontuacao,
-      neop: data.neop,
-      evaluationId: data.id,
+      evaluationId: resultado.id,
+      pontuacao: resultado.pontuacao,
+      neop: resultado.neop,
     };
   },
 
-  async update(input: Record<string, any> & { id: number }) {
-    const { id, neopManual, ...resto } = input;
-
-    const { data, error } = await supabase
-      .from("evaluations")
-      .update({ ...limparEntrada(resto), neopManual: neopManual || null })
-      .eq("id", id)
-      .select("pontuacao, neop")
-      .single();
-
-    if (error) throw new Error(error.message);
-    return { success: true as const, pontuacao: data.pontuacao, neop: data.neop };
+  /** Muda apenas a classificação manual; a pontuação continua a vir dos critérios. */
+  async atualizarNeop(input: { id: number; neopManual: string | null }) {
+    const linhas = exigirLinhas(
+      await supabase
+        .from("evaluations")
+        .update({ neopManual: input.neopManual || null })
+        .eq("id", input.id)
+        .select("pontuacao, neop"),
+      "Só o autor da avaliação ou um administrador pode mudar o NEOP.",
+    );
+    return { success: true as const, pontuacao: linhas[0].pontuacao, neop: linhas[0].neop };
   },
 
   async delete(input: { id: number }) {
     // As operações e suspeitos associados caem por ON DELETE CASCADE.
-    const { error } = await supabase.from("evaluations").delete().eq("id", input.id);
-    if (error) throw new Error(error.message);
+    exigirLinhas(
+      await supabase.from("evaluations").delete().eq("id", input.id).select("id"),
+      "Só o autor da avaliação ou um administrador a pode eliminar.",
+    );
     return { success: true as const };
   },
 
-  /** Pré-visualização em tempo real — não toca na base de dados. */
-  async preview(input: ScoringInput & { neopManual?: string }) {
-    const resultado = calcScore(input);
-    return input.neopManual ? { ...resultado, neop: input.neopManual } : resultado;
+  async deleteMany(input: { ids: number[] }) {
+    if (input.ids.length === 0) return { eliminadas: 0, pedidas: 0 };
+    const { data, error } = await supabase.from("evaluations").delete().in("id", input.ids).select("id");
+    if (error) throw traduzirErro(error);
+    return { eliminadas: data?.length ?? 0, pedidas: input.ids.length };
   },
 
   /** Lista os Comandos Territoriais presentes nas avaliações, para o filtro. */
   async getCters() {
-    const rows = unwrap(await supabase.from("evaluations").select('"cterRequerente", parecer'));
+    const rows = await buscarTudo((de, ate) =>
+      supabase
+        .from("evaluations")
+        .select('id, "cterRequerente", parecer', { count: "exact" })
+        .order("id")
+        .range(de, ate),
+    );
     const cters = new Set<string>();
-
-    (rows ?? []).forEach((e: any) => {
+    rows.forEach((e: any) => {
       const cter = cterDaAvaliacao(e);
       if (cter) cters.add(cter);
     });
-
-    return Array.from(cters).sort();
+    return Array.from(cters).sort((a, b) => a.localeCompare(b, "pt"));
   },
 };
 
 // ─── statistics ──────────────────────────────────────────────────────────────
 
-function dentroDoIntervalo(createdAt: string, startDate?: string, endDate?: string) {
-  if (!startDate && !endDate) return true;
-  const d = new Date(createdAt);
-  if (startDate && d < new Date(startDate)) return false;
-  if (endDate && d > new Date(endDate)) return false;
-  return true;
+/** Avaliações num intervalo de datas (dias locais, ambos inclusivos). */
+function avaliacoesNoIntervalo<T>(colunas: string, input?: { startDate?: string; endDate?: string }, neop?: string) {
+  return buscarTudo<T>((de, ate) => {
+    let query = supabase.from("evaluations").select(colunas, { count: "exact" }).order("id");
+    const inicio = input?.startDate ? inicioDoDia(input.startDate) : undefined;
+    const fim = input?.endDate ? fimDoDiaExclusivo(input.endDate) : undefined;
+    if (inicio) query = query.gte("createdAt", inicio);
+    if (fim) query = query.lt("createdAt", fim);
+    if (neop) query = query.eq("neop", neop);
+    return query.range(de, ate);
+  });
 }
 
 export const statistics = {
   async get(input?: { startDate?: string; endDate?: string }) {
-    const rows = unwrap(
-      await supabase.from("evaluations").select("pontuacao, neop, createdAt"),
-    ) as Array<{ pontuacao: number; neop: string; createdAt: string }>;
-
-    const all = (rows ?? []).filter((e) => dentroDoIntervalo(e.createdAt, input?.startDate, input?.endDate));
+    const all = await avaliacoesNoIntervalo<{ pontuacao: number; neop: string }>("id, pontuacao, neop", input);
 
     const total = all.length;
     const avgScore = total > 0 ? all.reduce((s, e) => s + e.pontuacao, 0) / total : 0;
@@ -378,22 +587,17 @@ export const statistics = {
 
   /** Conta os 4º NEOP por Comando Territorial, para o mapa. */
   async neop4ByCter(input?: { startDate?: string; endDate?: string }) {
-    const rows = unwrap(
-      await supabase
-        .from("evaluations")
-        .select('neop, parecer, "cterRequerente", "createdAt"')
-        .eq("neop", "4º NEOP"),
-    ) as Array<{ parecer: string | null; cterRequerente: string | null; createdAt: string }>;
+    const rows = await avaliacoesNoIntervalo<{ parecer: string | null; cterRequerente: string | null }>(
+      'id, parecer, "cterRequerente"',
+      input,
+      "4º NEOP",
+    );
 
     const cterCounts: Record<string, number> = {};
-
-    (rows ?? [])
-      .filter((e) => dentroDoIntervalo(e.createdAt, input?.startDate, input?.endDate))
-      .forEach((e) => {
-        const nome = cterDaAvaliacao(e);
-        if (nome) cterCounts[nome] = (cterCounts[nome] || 0) + 1;
-      });
-
+    rows.forEach((e) => {
+      const nome = cterDaAvaliacao(e);
+      if (nome) cterCounts[nome] = (cterCounts[nome] || 0) + 1;
+    });
     return cterCounts;
   },
 };
@@ -402,54 +606,114 @@ export const statistics = {
 
 export const users = {
   async list() {
-    return unwrap(
-      await supabase.from("profiles").select("*").order("createdAt", { ascending: false }),
-    ) as Profile[];
+    return buscarTudo<Profile>((de, ate) =>
+      supabase
+        .from("profiles")
+        .select("*", { count: "exact" })
+        .order("createdAt", { ascending: false })
+        .order("id")
+        .range(de, ate),
+    );
   },
 
-  async delete(input: { id: string }) {
-    // Remove o perfil. A conta em auth.users só pode ser apagada com a
-    // service_role key, que não existe num site estático — ver README.
-    const { error } = await supabase.from("profiles").delete().eq("id", input.id);
-    if (error) throw new Error(error.message);
+  /**
+   * Desativa a conta: o militar perde imediatamente o acesso, mas tudo o que
+   * registou fica intacto. Substitui a eliminação, que apagava em cascata as
+   * avaliações, os suspeitos e as operações dessa pessoa.
+   */
+  async desativar(input: { id: string }) {
+    exigirLinhas(await supabase.from("profiles").update({ active: 0 }).eq("id", input.id).select("id"));
+    return { success: true as const };
+  },
+
+  async reativar(input: { id: string }) {
+    exigirLinhas(await supabase.from("profiles").update({ active: 1 }).eq("id", input.id).select("id"));
     return { success: true as const };
   },
 
   async promoteToAdmin(input: { id: string }) {
-    const { error } = await supabase.from("profiles").update({ role: "admin", approved: 1 }).eq("id", input.id);
-    if (error) throw new Error(error.message);
+    exigirLinhas(
+      await supabase.from("profiles").update({ role: "admin", approved: 1 }).eq("id", input.id).select("id"),
+    );
+    return { success: true as const };
+  },
+
+  async removerAdmin(input: { id: string }) {
+    exigirLinhas(await supabase.from("profiles").update({ role: "user" }).eq("id", input.id).select("id"));
     return { success: true as const };
   },
 
   async getPending() {
     return unwrap(
-      await supabase.from("profiles").select("*").eq("approved", 0).order("createdAt", { ascending: false }),
+      await supabase
+        .from("profiles")
+        .select("*")
+        .eq("approved", 0)
+        .eq("active", 1)
+        .order("createdAt", { ascending: false }),
     ) as Profile[];
   },
 
   async approve(input: { id: string }) {
-    const { error } = await supabase.from("profiles").update({ approved: 1 }).eq("id", input.id);
-    if (error) throw new Error(error.message);
+    exigirLinhas(await supabase.from("profiles").update({ approved: 1 }).eq("id", input.id).select("id"));
     return { success: true as const };
   },
 
+  /** Rejeita um registo por aprovar. Contas aprovadas não se eliminam — desativam-se. */
   async reject(input: { id: string }) {
-    const { error } = await supabase.from("profiles").delete().eq("id", input.id);
-    if (error) throw new Error(error.message);
+    exigirLinhas(
+      await supabase.from("profiles").delete().eq("id", input.id).eq("approved", 0).select("id"),
+      "Só é possível rejeitar registos que ainda não foram aprovados.",
+    );
     return { success: true as const };
   },
 };
 
 // ─── operations ──────────────────────────────────────────────────────────────
 
+/**
+ * Campos que o cliente nunca envia numa operação: ou são do servidor (estado
+ * de preenchimento, datas), ou só os administradores os mudam, por funções
+ * próprias (atribuição, sinalização).
+ */
+const CAMPOS_PROTEGIDOS_OPERACAO = new Set([
+  "id",
+  "userId",
+  "evaluationId",
+  "assignedUserId",
+  "scheduledDate",
+  "flaggedForCompletion",
+  "flaggedAt",
+  "operacaoPreenchida",
+  "consumosPreenchidos",
+  "observacoesPreenchidas",
+  "createdAt",
+  "assignedUserName",
+  "assignedUserRank",
+  "assignedUserPhone",
+  "avaliacao",
+  "assigned",
+]);
+
+function camposEditaveisOperacao(input: Record<string, any>) {
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(input)) {
+    if (!CAMPOS_PROTEGIDOS_OPERACAO.has(k) && v !== undefined) out[k] = v;
+  }
+  return out;
+}
+
 export const operations = {
   async create(input: Record<string, any> & { evaluationId: number }) {
-    const { data: sessionData } = await supabase.auth.getUser();
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("operations")
-      .insert({ ...input, userId: sessionData.user?.id ?? null });
-    if (error) throw new Error(error.message);
-    return { success: true as const };
+      .insert({ ...camposEditaveisOperacao(input), evaluationId: input.evaluationId })
+      .select("id")
+      .single();
+    if (error) {
+      throw traduzirErro(error, "Já existe um relatório de operação para esta avaliação.");
+    }
+    return { success: true as const, id: data.id as number };
   },
 
   async getByEvaluationId(input: { evaluationId: number }) {
@@ -457,31 +721,44 @@ export const operations = {
       .from("operations")
       .select("*")
       .eq("evaluationId", input.evaluationId)
+      .order("id")
       .limit(1)
       .maybeSingle();
-    if (error) throw new Error(error.message);
+    if (error) throw traduzirErro(error);
     return (data as Operation) ?? null;
   },
 
   async getById(input: { id: number }) {
-    const { data, error } = await supabase.from("operations").select("*").eq("id", input.id).maybeSingle();
-    if (error) throw new Error(error.message);
-    return (data as Operation) ?? null;
+    const { data, error } = await supabase
+      .from("operations")
+      .select('*, avaliacao:evaluations ( "userId" )')
+      .eq("id", input.id)
+      .maybeSingle();
+    if (error) throw traduzirErro(error);
+    if (!data) return null;
+    const { avaliacao, ...operacao } = data as any;
+    return { ...operacao, autorAvaliacaoId: avaliacao?.userId ?? null } as Operation;
   },
 
   async update(input: Record<string, any> & { id: number }) {
-    const { id, ...data } = input;
-    const { error } = await supabase.from("operations").update(data).eq("id", id);
-    if (error) throw new Error(error.message);
+    const { id, ...resto } = input;
+    exigirLinhas(
+      await supabase.from("operations").update(camposEditaveisOperacao(resto)).eq("id", id).select("id"),
+      "Só o autor da avaliação, o militar atribuído ou um administrador podem alterar esta operação.",
+    );
     return { success: true as const };
   },
 
   async getMonths() {
-    const rows = unwrap(await supabase.from("operations").select("preenchimentoSecOp")) as Array<{
-      preenchimentoSecOp: string | null;
-    }>;
+    const rows = await buscarTudo<{ preenchimentoSecOp: string | null }>((de, ate) =>
+      supabase
+        .from("operations")
+        .select('id, "preenchimentoSecOp"', { count: "exact" })
+        .order("id")
+        .range(de, ate),
+    );
     const months = new Set<string>();
-    (rows ?? []).forEach((op) => {
+    rows.forEach((op) => {
       if (op.preenchimentoSecOp) months.add(op.preenchimentoSecOp);
     });
     return Array.from(months).sort();
@@ -489,118 +766,83 @@ export const operations = {
 
   async getByMonth(input?: { month?: string }) {
     // O militar atribuído vem junto para que o botão de notificação tenha o
-    // nome e o telefone. Na versão anterior estes campos não eram carregados e
-    // a janela de notificação aparecia sempre com "N/A".
-    let query = supabase
-      .from("operations")
-      .select('*, assigned:profiles!operations_assignedUserId_fkey ( "name", "rank", "phoneNumber" )');
+    // nome e o telefone; o autor da avaliação, para saber quem pode eliminar.
+    const rows = await buscarTudo<any>((de, ate) => {
+      let query = supabase
+        .from("operations")
+        .select(
+          '*, assigned:profiles!operations_assignedUserId_fkey ( "name", "rank", "phoneNumber" ), avaliacao:evaluations ( "userId" )',
+          { count: "exact" },
+        )
+        .order("id");
+      if (input?.month) query = query.eq("preenchimentoSecOp", input.month);
+      return query.range(de, ate);
+    });
 
-    if (input?.month) query = query.eq("preenchimentoSecOp", input.month);
-
-    const rows = (unwrap(await query) ?? []) as Array<any>;
-
-    return rows.map(({ assigned, ...op }) => ({
+    return rows.map(({ assigned, avaliacao, ...op }) => ({
       ...op,
       assignedUserName: assigned?.name ?? null,
       assignedUserRank: assigned?.rank ?? null,
       assignedUserPhone: assigned?.phoneNumber ?? null,
+      autorAvaliacaoId: avaliacao?.userId ?? null,
     })) as Operation[];
   },
 
   async deleteMany(input: { ids: number[] }) {
-    if (input.ids.length === 0) return { success: true as const };
-    const { error } = await supabase.from("operations").delete().in("id", input.ids);
-    if (error) throw new Error(error.message);
-    return { success: true as const };
+    if (input.ids.length === 0) return { eliminadas: 0, pedidas: 0 };
+    const { data, error } = await supabase.from("operations").delete().in("id", input.ids).select("id");
+    if (error) throw traduzirErro(error);
+    return { eliminadas: data?.length ?? 0, pedidas: input.ids.length };
   },
 
+  /** Militares a quem se pode atribuir uma operação: aprovados e ativos. */
   async listMilitares() {
     return unwrap(
-      await supabase.from("profiles").select('id, "name", email, "rank", "phoneNumber", "mecanographicNumber"'),
+      await supabase
+        .from("profiles")
+        .select('id, "name", email, "rank", "phoneNumber", "mecanographicNumber"')
+        .eq("approved", 1)
+        .eq("active", 1)
+        .order("name"),
     ) as Array<Pick<Profile, "id" | "name" | "email" | "rank" | "phoneNumber" | "mecanographicNumber">>;
   },
 
+  /** Só administradores (imposto pela base de dados). */
   async assignToMilitar(input: { operationId: number; assignedUserId: string; scheduledDate: string }) {
-    const { error } = await supabase
-      .from("operations")
-      .update({ assignedUserId: input.assignedUserId, scheduledDate: input.scheduledDate })
-      .eq("id", input.operationId);
-    if (error) throw new Error(error.message);
+    exigirLinhas(
+      await supabase
+        .from("operations")
+        .update({ assignedUserId: input.assignedUserId, scheduledDate: input.scheduledDate })
+        .eq("id", input.operationId)
+        .select("id"),
+    );
     return { success: true as const };
   },
 
   /**
-   * Prepara a mensagem de WhatsApp. Tal como na versão original, nada é enviado
-   * automaticamente: é gerada uma ligação wa.me que o utilizador abre.
+   * Regista a notificação e devolve a ligação wa.me para abrir. O destinatário,
+   * o telefone, a mensagem e a ligação são gerados pela base de dados a partir
+   * da operação — o cliente envia só o identificador.
    */
-  async sendNotification(input: {
-    operationId: number;
-    userId: string;
-    phoneNumber: string;
-    militarName: string;
-    scheduledDate: string;
-  }) {
-    const message =
-      `Olá ${input.militarName},\n\n` +
-      `Foi-lhe atribuída uma operação GIOE para a data de ${input.scheduledDate}.\n\n` +
-      `Por favor, preencha o relatório da operação no sistema.\n\nObrigado!`;
-
-    const phoneClean = input.phoneNumber.replace(/[^0-9]/g, "");
-    const whatsappLink = `https://wa.me/${phoneClean}?text=${encodeURIComponent(message)}`;
-
+  async sendNotification(input: { operationId: number }) {
     const { data, error } = await supabase
       .from("notifications")
-      .insert({
-        operationId: input.operationId,
-        userId: input.userId,
-        phoneNumber: input.phoneNumber,
-        message,
-        whatsappLink,
-      })
-      .select()
+      .insert({ operationId: input.operationId })
+      .select("whatsappLink")
       .single();
+    if (error) throw traduzirErro(error);
 
-    if (error) throw new Error(error.message);
-    return { ...data, whatsappLink };
-  },
-
-  async getNotifications(input: { operationId: number }) {
-    return (unwrap(
-      await supabase.from("notifications").select("*").eq("operationId", input.operationId),
-    ) ?? []) as Array<Record<string, any>>;
-  },
-
-  async markNotificationAsSent(input: { notificationId: number }) {
-    const { error } = await supabase
-      .from("notifications")
-      .update({ sent: 1, sentAt: new Date().toISOString() })
-      .eq("id", input.notificationId);
-    if (error) throw new Error(error.message);
-    return { success: true as const };
-  },
-
-  async updateOperationStatus(input: {
-    operationId: number;
-    operacaoPreenchida?: number;
-    consumosPreenchidos?: number;
-    observacoesPreenchidas?: number;
-  }) {
-    const patch: Record<string, number> = {};
-    if (input.operacaoPreenchida !== undefined) patch.operacaoPreenchida = input.operacaoPreenchida;
-    if (input.consumosPreenchidos !== undefined) patch.consumosPreenchidos = input.consumosPreenchidos;
-    if (input.observacoesPreenchidas !== undefined) patch.observacoesPreenchidas = input.observacoesPreenchidas;
-    if (Object.keys(patch).length === 0) return { success: true as const };
-
-    const { error } = await supabase.from("operations").update(patch).eq("id", input.operationId);
-    if (error) throw new Error(error.message);
-    return { success: true as const };
+    const ligacao = String(data.whatsappLink ?? "");
+    // Defesa em profundidade: só se abre uma ligação para o WhatsApp.
+    if (!/^https:\/\/wa\.me\/\d+\?text=/.test(ligacao)) {
+      throw new Error("Ligação de notificação inválida.");
+    }
+    return { whatsappLink: ligacao };
   },
 
   async listMilitarOperations() {
-    const { data: sessionData } = await supabase.auth.getUser();
-    if (!sessionData.user) return [];
-
-    const rows = unwrap(
+    const user = await utilizadorAtual();
+    return unwrap(
       await supabase
         .from("operations")
         .select(
@@ -608,207 +850,100 @@ export const operations = {
             '"observacoesPreenchidas", "flaggedForCompletion", "flaggedAt", "preenchimentoSecOp", "cmdtOp", ' +
             '"efetivTotalOperacao"',
         )
-        .eq("assignedUserId", sessionData.user.id),
-    );
-
-    return (rows ?? []) as unknown as Operation[];
+        .eq("assignedUserId", user.id)
+        .order("id", { ascending: false }),
+    ) as unknown as Operation[];
   },
 
-  /** Sinaliza operações atribuídas que ainda não foram preenchidas. */
+  /**
+   * Sinaliza operações atribuídas cujo relatório ainda está incompleto.
+   * Só administradores; a sinalização desaparece sozinha quando o relatório
+   * fica completo.
+   */
   async flagIncompleteOperations() {
-    const pendentes = unwrap(
-      await supabase
-        .from("operations")
-        .select("id")
-        .not("assignedUserId", "is", null)
-        .eq("flaggedForCompletion", 0)
-        .or("operacaoPreenchida.eq.0,consumosPreenchidos.eq.0,observacoesPreenchidas.eq.0"),
-    ) as Array<{ id: number }>;
-
-    const ids = (pendentes ?? []).map((o) => o.id);
-    if (ids.length === 0) return { flagged: 0 };
-
-    const { error } = await supabase
-      .from("operations")
-      .update({ flaggedForCompletion: 1, flaggedAt: new Date().toISOString() })
-      .in("id", ids);
-    if (error) throw new Error(error.message);
-
-    return { flagged: ids.length };
-  },
-
-  async getFlaggedOperations() {
-    return (unwrap(
-      await supabase.from("operations").select("*").eq("flaggedForCompletion", 1),
-    ) ?? []) as Operation[];
-  },
-
-  async getOperationWithAssignedUser(input: { operationId: number }) {
     const { data, error } = await supabase
       .from("operations")
-      .select('*, user:profiles!operations_assignedUserId_fkey (*)')
-      .eq("id", input.operationId)
-      .maybeSingle();
-
-    if (error) throw new Error(error.message);
-    if (!data || !data.assignedUserId) return null;
-
-    const { user, ...operation } = data as any;
-    return { operation, user };
+      .update({ flaggedForCompletion: 1, flaggedAt: new Date().toISOString() })
+      .not("assignedUserId", "is", null)
+      .eq("flaggedForCompletion", 0)
+      .or("operacaoPreenchida.eq.0,consumosPreenchidos.eq.0,observacoesPreenchidas.eq.0")
+      .select("id");
+    if (error) throw traduzirErro(error);
+    return { flagged: data?.length ?? 0 };
   },
 };
 
 // ─── suspects ────────────────────────────────────────────────────────────────
 
 export const suspects = {
-  async createBatch(input: { evaluationId: number; suspects: Array<Record<string, any>> }) {
-    if (input.suspects.length === 0) return [];
-
-    const rows = input.suspects.map((s) => {
-      const limpo: Record<string, any> = { evaluationId: input.evaluationId };
-      for (const [k, v] of Object.entries(s)) {
-        if (v !== undefined && v !== null) limpo[k] = v;
-      }
-      return limpo;
-    });
-
-    return (unwrap(await supabase.from("suspects").insert(rows).select()) ?? []) as Suspect[];
-  },
-
   async getByEvaluationId(input: { evaluationId: number }) {
     return (unwrap(
-      await supabase.from("suspects").select("*").eq("evaluationId", input.evaluationId),
+      await supabase.from("suspects").select("*").eq("evaluationId", input.evaluationId).order("id"),
     ) ?? []) as Suspect[];
-  },
-
-  async update(input: Record<string, any> & { id: number }) {
-    const { id, ...data } = input;
-    const { error } = await supabase.from("suspects").update(data).eq("id", id);
-    if (error) throw new Error(error.message);
-    return { success: true as const };
-  },
-
-  async delete(input: { id: number }) {
-    const { error } = await supabase.from("suspects").delete().eq("id", input.id);
-    if (error) throw new Error(error.message);
-    return { success: true as const };
-  },
-
-  async deleteByEvaluationId(input: { evaluationId: number }) {
-    const { error } = await supabase.from("suspects").delete().eq("evaluationId", input.evaluationId);
-    if (error) throw new Error(error.message);
-    return { success: true as const };
   },
 };
 
 // ─── suspectProfiles ─────────────────────────────────────────────────────────
 
 export const suspectProfiles = {
-  async list(input?: { limit?: number; offset?: number }) {
-    const limit = input?.limit ?? 50;
-    const offset = input?.offset ?? 0;
-
-    const todos = (unwrap(
-      await supabase.from("suspects").select('*, evaluations ( neop )'),
-    ) ?? []) as Array<any>;
+  async list() {
+    const todos = await buscarTudo<any>((de, ate) =>
+      supabase
+        .from("suspects")
+        .select("*, evaluations ( neop )", { count: "exact" })
+        .order("id")
+        .range(de, ate),
+    );
 
     // Agrupar por pessoa (nome + NIF + CC), como na versão original.
     const unicos = new Map<string, any[]>();
     todos.forEach((s) => {
-      const chave = `${s.nome}-${s.nif}-${s.cc}`;
+      const chave = [s.nome, s.nif, s.cc].map((v) => (v ?? "").toString().trim().toLowerCase()).join("|");
       const lista = unicos.get(chave) ?? [];
       lista.push(s);
       unicos.set(chave, lista);
     });
 
-    return Array.from(unicos.values())
-      .slice(offset, offset + limit)
-      .map((ocorrencias) => {
-        const primeiro = ocorrencias[0];
-        const neops = ocorrencias.map((o) => o.evaluations?.neop).filter(Boolean);
+    return Array.from(unicos.values()).map((ocorrencias) => {
+      const primeiro = ocorrencias[0];
+      const neops = ocorrencias.map((o) => o.evaluations?.neop).filter(Boolean);
 
-        return {
-          id: primeiro.id,
-          nome: primeiro.nome,
-          nif: primeiro.nif,
-          cc: primeiro.cc,
-          nacionalidade: primeiro.nacionalidade,
-          totalOperations: ocorrencias.length,
-          neop4Count: neops.filter((n: string) => n === "4º NEOP").length,
-        };
-      });
-  },
-
-  async getById(input: { suspectId: number }) {
-    const { data, error } = await supabase
-      .from("suspects")
-      .select("*")
-      .eq("id", input.suspectId)
-      .maybeSingle();
-
-    if (error) throw new Error(error.message);
-    if (!data) return null;
-
-    const relacionadas = (unwrap(
-      await supabase
-        .from("evaluations")
-        .select('id, pontuacao, neop, "dataAvaliacao", "tipoCriminal"')
-        .eq("id", (data as any).evaluationId),
-    ) ?? []) as Array<any>;
-
-    const total = relacionadas.length;
-
-    return {
-      suspect: data,
-      evaluations: relacionadas,
-      stats: {
-        totalOperations: total,
-        averageScore:
-          total > 0
-            ? Math.round((relacionadas.reduce((s, e) => s + e.pontuacao, 0) / total) * 100) / 100
-            : 0,
-        neop4Count: relacionadas.filter((e) => e.neop === "4º NEOP").length,
-      },
-    };
+      return {
+        id: primeiro.id as number,
+        nome: primeiro.nome as string | null,
+        nif: primeiro.nif as string | null,
+        cc: primeiro.cc as string | null,
+        nacionalidade: primeiro.nacionalidade as string | null,
+        totalOperations: ocorrencias.length,
+        neop4Count: neops.filter((n: string) => n === "4º NEOP").length,
+      };
+    });
   },
 };
 
-// ─── operationAnalysis ───────────────────────────────────────────────────────
+// ─── audit ───────────────────────────────────────────────────────────────────
 
-export const operationAnalysis = {
-  async summary() {
-    const all = (unwrap(
-      await supabase.from("evaluations").select('neop, pontuacao, "cterRequerente"'),
-    ) ?? []) as Array<any>;
-
-    const byNeop: Record<string, number> = {};
-    const byCter: Record<string, number> = {};
-    let totalScore = 0;
-
-    all.forEach((e) => {
-      byNeop[e.neop] = (byNeop[e.neop] || 0) + 1;
-      if (e.cterRequerente) byCter[e.cterRequerente] = (byCter[e.cterRequerente] || 0) + 1;
-      totalScore += e.pontuacao;
-    });
-
-    return {
-      totalOperations: all.length,
-      averageScore: all.length > 0 ? Math.round((totalScore / all.length) * 100) / 100 : 0,
-      byNeop,
-      byCter,
-      neop4Percentage: all.length > 0 ? Math.round(((byNeop["4º NEOP"] || 0) / all.length) * 100) : 0,
-    };
+export const audit = {
+  /** Só administradores (imposto pela base de dados). */
+  async list(input?: { tabela?: string; acao?: string; limite?: number }) {
+    let query = supabase
+      .from("audit_log")
+      .select("*")
+      .order("occurredAt", { ascending: false })
+      .limit(Math.min(input?.limite ?? 200, 1000));
+    if (input?.tabela) query = query.eq("tableName", input.tabela);
+    if (input?.acao) query = query.eq("action", input.acao);
+    return unwrap(await query) as RegistoAuditoria[];
   },
 
-  async filtered(input?: { neop?: string; cterRequerente?: string; limit?: number; offset?: number }) {
-    const limit = input?.limit ?? 50;
-    const offset = input?.offset ?? 0;
-
-    let query = supabase.from("evaluations").select("*");
-    if (input?.neop) query = query.eq("neop", input.neop);
-    if (input?.cterRequerente) query = query.eq("cterRequerente", input.cterRequerente);
-
-    return (unwrap(await query.range(offset, offset + limit - 1)) ?? []) as Evaluation[];
+  /**
+   * Regista uma exportação ou impressão. Não bloqueia a ação se falhar: o
+   * registo é complementar, não uma condição.
+   */
+  async registar(input: { acao: "EXPORT" | "PRINT"; detalhe: Record<string, unknown> }) {
+    const { error } = await supabase.rpc("registar_evento", { p_acao: input.acao, p_detalhe: input.detalhe });
+    if (error) console.warn("[auditoria] não foi possível registar o evento", error.message);
+    return { success: !error };
   },
 };
 
@@ -820,5 +955,5 @@ export const api = {
   operations,
   suspects,
   suspectProfiles,
-  operationAnalysis,
+  audit,
 };

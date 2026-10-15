@@ -57,12 +57,13 @@ export function SuspectForm({ suspects, onSuspectsChange, readOnly = false }: Su
   return (
     <div className="space-y-4">
       {suspects.map((suspect, index) => (
-        <Card key={suspect.id ?? `novo-${index}`} className="p-4 border-2 border-gray-200">
+        <Card key={suspect.id ?? `novo-${index}`} className="p-4 border border-ral-200 bg-white shadow-none">
           <div className="flex items-center justify-between mb-4">
             <button
               type="button"
               onClick={() => setExpandedIndex(expandedIndex === index ? null : index)}
-              className="flex items-center gap-2 w-full text-left font-semibold text-gray-700 hover:text-gray-900"
+              className="flex items-center gap-2 w-full text-left font-semibold text-ral-800 hover:text-ral-950"
+              aria-expanded={expandedIndex === index}
             >
               {expandedIndex === index ? (
                 <ChevronUp className="w-4 h-4" />
@@ -77,7 +78,7 @@ export function SuspectForm({ suspects, onSuspectsChange, readOnly = false }: Su
               <button
                 type="button"
                 onClick={() => removeSuspect(index)}
-                className="ml-2 p-2 text-red-600 hover:bg-red-50 rounded"
+                className="ml-2 p-2 text-erro hover:bg-erro-claro rounded"
                 aria-label={`Remover suspeito ${index + 1}`}
               >
                 <Trash2 className="w-4 h-4" />
@@ -89,17 +90,16 @@ export function SuspectForm({ suspects, onSuspectsChange, readOnly = false }: Su
             <div className="space-y-4 pt-4 border-t">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-sm font-semibold text-gray-600 mb-1 block">Nome</Label>
+                  <Label className="text-sm font-semibold text-ral-700 mb-1 block">Nome</Label>
                   <Input
                     placeholder="Nome completo"
                     value={suspect.nome}
                     onChange={(e) => updateSuspect(index, "nome", e.target.value)}
                     disabled={readOnly}
-                    className="border-2 focus:border-[#1a472a]"
                   />
                 </div>
                 <div>
-                  <Label className="text-sm font-semibold text-gray-600 mb-1 block">
+                  <Label className="text-sm font-semibold text-ral-700 mb-1 block">
                     Data de nascimento
                   </Label>
                   <Input
@@ -107,14 +107,13 @@ export function SuspectForm({ suspects, onSuspectsChange, readOnly = false }: Su
                     value={suspect.dataNascimento}
                     onChange={(e) => updateSuspect(index, "dataNascimento", e.target.value)}
                     disabled={readOnly}
-                    className="border-2 focus:border-[#1a472a]"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <Label className="text-sm font-semibold text-gray-600 mb-1 block">
+                  <Label className="text-sm font-semibold text-ral-700 mb-1 block">
                     Nacionalidade
                   </Label>
                   <Input
@@ -122,44 +121,41 @@ export function SuspectForm({ suspects, onSuspectsChange, readOnly = false }: Su
                     value={suspect.nacionalidade}
                     onChange={(e) => updateSuspect(index, "nacionalidade", e.target.value)}
                     disabled={readOnly}
-                    className="border-2 focus:border-[#1a472a]"
                   />
                 </div>
                 <div>
-                  <Label className="text-sm font-semibold text-gray-600 mb-1 block">NIF</Label>
+                  <Label className="text-sm font-semibold text-ral-700 mb-1 block">NIF</Label>
                   <Input
                     placeholder="NIF"
                     value={suspect.nif}
                     onChange={(e) => updateSuspect(index, "nif", e.target.value)}
                     disabled={readOnly}
-                    className="border-2 focus:border-[#1a472a]"
                   />
                 </div>
                 <div>
-                  <Label className="text-sm font-semibold text-gray-600 mb-1 block">CC</Label>
+                  <Label className="text-sm font-semibold text-ral-700 mb-1 block">CC</Label>
                   <Input
                     placeholder="Cartão de cidadão"
                     value={suspect.cc}
                     onChange={(e) => updateSuspect(index, "cc", e.target.value)}
                     disabled={readOnly}
-                    className="border-2 focus:border-[#1a472a]"
                   />
                 </div>
               </div>
 
               <div>
-                <Label className="text-sm font-semibold text-gray-600 mb-1 block">Morada</Label>
+                <Label className="text-sm font-semibold text-ral-700 mb-1 block">Morada</Label>
                 <Textarea
                   placeholder="Morada completa"
                   value={suspect.morada}
                   onChange={(e) => updateSuspect(index, "morada", e.target.value)}
                   disabled={readOnly}
-                  className="min-h-[60px] border-2 focus:border-[#1a472a]"
+                  className="min-h-[60px]"
                 />
               </div>
 
               <div>
-                <Label className="text-sm font-semibold text-gray-600 mb-1 block">
+                <Label className="text-sm font-semibold text-ral-700 mb-1 block">
                   Observações
                 </Label>
                 <Textarea
@@ -167,7 +163,7 @@ export function SuspectForm({ suspects, onSuspectsChange, readOnly = false }: Su
                   value={suspect.observacoes}
                   onChange={(e) => updateSuspect(index, "observacoes", e.target.value)}
                   disabled={readOnly}
-                  className="min-h-[80px] border-2 focus:border-[#1a472a]"
+                  className="min-h-[80px]"
                 />
               </div>
             </div>
@@ -180,7 +176,7 @@ export function SuspectForm({ suspects, onSuspectsChange, readOnly = false }: Su
           type="button"
           onClick={addSuspect}
           variant="outline"
-          className="w-full border-2 border-dashed border-[#1a472a] text-[#1a472a] hover:bg-[#1a472a] hover:text-white"
+          className="w-full border-2 border-dashed border-ral-400 bg-white text-ral-700 hover:bg-ral-600 hover:text-white hover:border-ral-600"
         >
           <Plus className="w-4 h-4 mr-2" />
           Adicionar suspeito

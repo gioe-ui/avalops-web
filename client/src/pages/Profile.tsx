@@ -1,39 +1,57 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { PASSWORD_MINIMA } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { User, Mail, Phone, Hash, Award, Save, X, ArrowLeft, KeyRound } from "lucide-react";
+import { User, Mail, Phone, Hash, Award, Save, X, ArrowLeft, KeyRound, ShieldCheck, Pencil } from "lucide-react";
+import { POSTOS } from "./Auth";
 
-const RANKS = [
-  "Guarda",
-  "Guarda-Principal",
-  "Cabo",
-  "Cabo-Chefe",
-  "Cabo-Mor",
-  "2º Sargento",
-  "1º Sargento",
-  "Sargento-Ajudante",
-  "Sargento-Chefe",
-  "Alferes",
-  "Tenente",
-  "Capitão",
-  "Major",
-  "Tenente Coronel",
-];
+function Linha({
+  icone,
+  rotulo,
+  id,
+  children,
+}: {
+  icone: React.ReactNode;
+  rotulo: string;
+  id?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className="text-sm font-semibold text-ral-700 flex items-center gap-2">
+        <span aria-hidden="true">{icone}</span>
+        {rotulo}
+      </Label>
+      {children}
+    </div>
+  );
+}
+
+const Valor = ({ children }: { children: React.ReactNode }) => (
+  <div className="px-3 py-2 bg-ral-50 rounded-md border border-ral-200 text-ral-800 min-h-9">{children}</div>
+);
 
 export default function Profile() {
   const [, navigate] = useLocation();
-  const { data: user, isLoading } = trpc.auth.me.useQuery();
+  const { user } = useAuth();
   const utils = trpc.useUtils();
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [atual, setAtual] = useState("");
+  const [nova, setNova] = useState("");
+  const [confirmacao, setConfirmacao] = useState("");
+  const [formData, setFormData] = useState({ name: "", phoneNumber: "", mecanographicNumber: "", rank: "" });
 
   const updateMutation = trpc.auth.updateProfile.useMutation({
     onSuccess: () => {
       toast.success("Perfil atualizado.");
       setIsEditing(false);
-      utils.auth.me.invalidate();
+      void utils.auth.sessao.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -41,20 +59,11 @@ export default function Profile() {
   const changePasswordMutation = trpc.auth.changePassword.useMutation({
     onSuccess: () => {
       toast.success("Password alterada.");
-      setNewPassword("");
-      setConfirmNewPassword("");
+      setAtual("");
+      setNova("");
+      setConfirmacao("");
     },
     onError: (e) => toast.error(e.message),
-  });
-
-  const [isEditing, setIsEditing] = useState(false);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmNewPassword, setConfirmNewPassword] = useState("");
-  const [formData, setFormData] = useState({
-    name: "",
-    phoneNumber: "",
-    mecanographicNumber: "",
-    rank: "",
   });
 
   // O perfil chega de forma assíncrona; sem isto o formulário de edição abria
@@ -69,32 +78,17 @@ export default function Profile() {
     });
   }, [user]);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-500">A carregar perfil...</div>
-      </div>
-    );
-  }
+  if (!user) return null;
 
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-500">Utilizador não encontrado.</div>
-      </div>
-    );
-  }
+  const handleChange = (field: keyof typeof formData, value: string) => setFormData({ ...formData, [field]: value });
 
-  const handleChange = (field: string, value: string) => {
-    setFormData({ ...formData, [field]: value });
-  };
-
-  const handleSave = () => {
-    if (!formData.name || formData.name.length < 2) {
+  const handleSave = (e: FormEvent) => {
+    e.preventDefault();
+    if (formData.name.trim().length < 2) {
       toast.error("O nome tem de ter pelo menos 2 caracteres.");
       return;
     }
-    if (formData.phoneNumber && formData.phoneNumber.length < 9) {
+    if (formData.phoneNumber && !/^\+?\d{9,15}$/.test(formData.phoneNumber.replace(/\s/g, ""))) {
       toast.error("Número de telefone inválido.");
       return;
     }
@@ -107,9 +101,7 @@ export default function Profile() {
       name: formData.name !== user.name ? formData.name : undefined,
       phoneNumber: formData.phoneNumber !== user.phoneNumber ? formData.phoneNumber : undefined,
       mecanographicNumber:
-        formData.mecanographicNumber !== user.mecanographicNumber
-          ? formData.mecanographicNumber
-          : undefined,
+        formData.mecanographicNumber !== user.mecanographicNumber ? formData.mecanographicNumber : undefined,
       rank: formData.rank !== user.rank ? formData.rank : undefined,
     });
   };
@@ -124,220 +116,202 @@ export default function Profile() {
     setIsEditing(false);
   };
 
-  const handleChangePassword = () => {
-    if (newPassword.length < 8) {
-      toast.error("A nova password tem de ter pelo menos 8 caracteres.");
+  const handleChangePassword = (e: FormEvent) => {
+    e.preventDefault();
+    if (!atual) {
+      toast.error("Introduza a password atual.");
       return;
     }
-    if (newPassword !== confirmNewPassword) {
+    if (nova.length < PASSWORD_MINIMA) {
+      toast.error(`A nova password tem de ter pelo menos ${PASSWORD_MINIMA} caracteres.`);
+      return;
+    }
+    if (nova !== confirmacao) {
       toast.error("As passwords não coincidem.");
       return;
     }
-    changePasswordMutation.mutate(newPassword);
+    changePasswordMutation.mutate({ atual, nova });
   };
 
   return (
-    <div
-      className="min-h-screen p-6"
-      style={{ background: "linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%)" }}
-    >
+    <div className="min-h-dvh bg-background p-4 sm:p-6">
       <div className="max-w-2xl mx-auto">
         <div className="mb-8 flex items-start gap-4">
-          <Button variant="outline" size="icon" onClick={() => navigate("/")}>
+          <Button variant="outline" size="icon" onClick={() => navigate("/")} aria-label="Voltar">
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold mb-2" style={{ color: "#1a472a" }}>
-              O Meu Perfil
-            </h1>
-            <p className="text-gray-600">Consulte e edite os seus dados pessoais</p>
+            <h1 className="text-2xl font-bold text-ral-800">O meu perfil</h1>
+            <p className="text-ral-500">Consulte e edite os seus dados pessoais</p>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-lg p-8">
-          <div className="flex items-center mb-8 pb-8 border-b border-gray-200">
-            <div
-              className="w-16 h-16 rounded-full flex items-center justify-center mr-6"
-              style={{ background: "#1a472a" }}
-            >
+        <form onSubmit={handleSave} className="bg-white rounded-lg border border-ral-200 shadow-sm p-6 sm:p-8">
+          <div className="flex items-center mb-8 pb-6 border-b border-ral-200 gap-5">
+            <div className="w-16 h-16 rounded-full flex items-center justify-center bg-gioe shrink-0">
               <User className="w-8 h-8 text-white" />
             </div>
-            <div>
-              <h2 className="text-2xl font-bold text-gray-800">{user.name}</h2>
-              <p className="text-gray-500">{user.email}</p>
+            <div className="min-w-0">
+              <h2 className="text-xl font-bold text-ral-900 truncate">
+                {[user.rank, user.name].filter(Boolean).join(" ")}
+              </h2>
+              <p className="text-ral-500 truncate">{user.email}</p>
             </div>
           </div>
 
-          <div className="space-y-6">
-            <div>
-              <Label className="text-sm font-semibold text-gray-600 mb-2 flex items-center gap-2">
-                <User className="w-4 h-4" />
-                Nome completo
-              </Label>
+          <div className="space-y-5">
+            <Linha icone={<User className="w-4 h-4" />} rotulo="Nome completo" id="perfil-nome">
               {isEditing ? (
                 <Input
+                  id="perfil-nome"
                   value={formData.name}
+                  maxLength={200}
                   onChange={(e) => handleChange("name", e.target.value)}
-                  className="border-2 focus:border-[#1a472a]"
                 />
               ) : (
-                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-gray-700">
-                  {user.name}
-                </div>
+                <Valor>{user.name}</Valor>
               )}
-            </div>
+            </Linha>
 
-            <div>
-              <Label className="text-sm font-semibold text-gray-600 mb-2 flex items-center gap-2">
-                <Mail className="w-4 h-4" />
-                Email
-              </Label>
-              <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-gray-700">
-                {user.email}
-              </div>
-              <p className="text-xs text-gray-500 mt-1">O email não pode ser alterado.</p>
-            </div>
+            <Linha icone={<Mail className="w-4 h-4" />} rotulo="Email">
+              <Valor>{user.email}</Valor>
+              <p className="text-xs text-ral-500">O email não pode ser alterado aqui.</p>
+            </Linha>
 
-            <div>
-              <Label className="text-sm font-semibold text-gray-600 mb-2 flex items-center gap-2">
-                <Phone className="w-4 h-4" />
-                Número de telefone
-              </Label>
+            <Linha icone={<Phone className="w-4 h-4" />} rotulo="Telefone" id="perfil-telefone">
               {isEditing ? (
                 <Input
+                  id="perfil-telefone"
                   type="tel"
                   value={formData.phoneNumber}
+                  maxLength={20}
                   onChange={(e) => handleChange("phoneNumber", e.target.value)}
-                  placeholder="Ex.: 912345678"
-                  className="border-2 focus:border-[#1a472a]"
+                  placeholder="912345678"
                 />
               ) : (
-                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-gray-700">
-                  {user.phoneNumber || "Não preenchido"}
-                </div>
+                <Valor>{user.phoneNumber || "Não preenchido"}</Valor>
               )}
-            </div>
+            </Linha>
 
-            <div>
-              <Label className="text-sm font-semibold text-gray-600 mb-2 flex items-center gap-2">
-                <Hash className="w-4 h-4" />
-                Número mecanográfico
-              </Label>
+            <Linha icone={<Hash className="w-4 h-4" />} rotulo="N.º mecanográfico" id="perfil-mecanografico">
               {isEditing ? (
                 <Input
-                  type="text"
+                  id="perfil-mecanografico"
                   inputMode="numeric"
                   value={formData.mecanographicNumber}
-                  onChange={(e) => handleChange("mecanographicNumber", e.target.value)}
+                  onChange={(e) => handleChange("mecanographicNumber", e.target.value.replace(/\D/g, "").slice(0, 7))}
                   placeholder="7 dígitos"
-                  className="border-2 focus:border-[#1a472a]"
                 />
               ) : (
-                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-gray-700">
-                  {user.mecanographicNumber || "Não preenchido"}
-                </div>
+                <Valor>{user.mecanographicNumber || "Não preenchido"}</Valor>
               )}
-            </div>
+            </Linha>
 
-            <div>
-              <Label className="text-sm font-semibold text-gray-600 mb-2 flex items-center gap-2">
-                <Award className="w-4 h-4" />
-                Posto
-              </Label>
+            <Linha icone={<Award className="w-4 h-4" />} rotulo="Posto" id="perfil-posto">
               {isEditing ? (
                 <select
+                  id="perfil-posto"
                   value={formData.rank}
                   onChange={(e) => handleChange("rank", e.target.value)}
-                  className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-[#1a472a] focus:outline-none"
+                  className="w-full h-9 border border-input rounded-md px-3 bg-white text-sm"
                 >
                   <option value="">Selecione um posto</option>
-                  {RANKS.map((rank) => (
+                  {POSTOS.map((rank) => (
                     <option key={rank} value={rank}>
                       {rank}
                     </option>
                   ))}
                 </select>
               ) : (
-                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-gray-700">
-                  {user.rank || "Não preenchido"}
-                </div>
+                <Valor>{user.rank || "Não preenchido"}</Valor>
               )}
-            </div>
+            </Linha>
           </div>
 
-          <div className="flex gap-3 mt-8 pt-8 border-t border-gray-200">
+          <div className="flex gap-3 mt-8 pt-6 border-t border-ral-200">
             {!isEditing ? (
-              <Button
-                onClick={() => setIsEditing(true)}
-                className="flex-1 flex items-center justify-center gap-2"
-                style={{ background: "#1a472a" }}
-              >
-                <Save className="w-4 h-4" />
+              <Button type="button" onClick={() => setIsEditing(true)} className="flex-1">
+                <Pencil className="w-4 h-4" />
                 Editar perfil
               </Button>
             ) : (
               <>
-                <Button
-                  onClick={handleSave}
-                  disabled={updateMutation.isPending}
-                  className="flex-1 flex items-center justify-center gap-2"
-                  style={{ background: "#1a472a" }}
-                >
+                <Button type="submit" disabled={updateMutation.isPending} className="flex-1">
+                  <Save className="w-4 h-4" />
                   {updateMutation.isPending ? "A guardar..." : "Guardar alterações"}
                 </Button>
-                <Button
-                  onClick={handleCancel}
-                  variant="outline"
-                  className="flex-1 flex items-center justify-center gap-2"
-                >
+                <Button type="button" onClick={handleCancel} variant="outline" className="flex-1">
                   <X className="w-4 h-4" />
                   Cancelar
                 </Button>
               </>
             )}
           </div>
-        </div>
+        </form>
 
-        {/* Alteração de password — possível agora que a autenticação verifica
-            mesmo a password. */}
-        <div className="bg-white rounded-xl shadow-lg p-8 mt-6">
-          <h3 className="text-lg font-bold mb-4 flex items-center gap-2" style={{ color: "#1a472a" }}>
+        <section className="bg-white rounded-lg border border-ral-200 shadow-sm p-6 sm:p-8 mt-6">
+          <h3 className="text-lg font-bold mb-2 flex items-center gap-2 text-ral-800">
+            <ShieldCheck className="w-5 h-5" />
+            Segundo fator
+          </h3>
+          <p className="text-sm text-ral-600">
+            Ativo. A entrada pede o código da aplicação autenticadora. Se mudar de telemóvel, peça a um
+            administrador que remova o fator atual; no próximo acesso será pedido um novo registo.
+          </p>
+        </section>
+
+        <form
+          onSubmit={handleChangePassword}
+          className="bg-white rounded-lg border border-ral-200 shadow-sm p-6 sm:p-8 mt-6"
+        >
+          <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-ral-800">
             <KeyRound className="w-5 h-5" />
             Alterar password
           </h3>
+          <input type="email" autoComplete="username" value={user.email} readOnly hidden />
           <div className="space-y-4">
-            <div>
-              <Label className="text-sm font-semibold text-gray-600 mb-2 block">Nova password</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="password-atual" className="text-sm font-semibold text-ral-700">
+                Password atual
+              </Label>
               <Input
+                id="password-atual"
                 type="password"
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Mínimo 8 caracteres"
-                className="border-2 focus:border-[#1a472a]"
+                autoComplete="current-password"
+                value={atual}
+                onChange={(e) => setAtual(e.target.value)}
               />
             </div>
-            <div>
-              <Label className="text-sm font-semibold text-gray-600 mb-2 block">
+            <div className="space-y-1.5">
+              <Label htmlFor="password-nova" className="text-sm font-semibold text-ral-700">
+                Nova password
+              </Label>
+              <Input
+                id="password-nova"
+                type="password"
+                autoComplete="new-password"
+                value={nova}
+                onChange={(e) => setNova(e.target.value)}
+              />
+              <p className="text-xs text-ral-500">Mínimo {PASSWORD_MINIMA} caracteres.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="password-confirmar" className="text-sm font-semibold text-ral-700">
                 Confirmar nova password
               </Label>
               <Input
+                id="password-confirmar"
                 type="password"
                 autoComplete="new-password"
-                value={confirmNewPassword}
-                onChange={(e) => setConfirmNewPassword(e.target.value)}
-                className="border-2 focus:border-[#1a472a]"
+                value={confirmacao}
+                onChange={(e) => setConfirmacao(e.target.value)}
               />
             </div>
-            <Button
-              onClick={handleChangePassword}
-              disabled={changePasswordMutation.isPending || !newPassword}
-              style={{ background: "#1a472a" }}
-            >
+            <Button type="submit" disabled={changePasswordMutation.isPending || !nova || !atual}>
               {changePasswordMutation.isPending ? "A alterar..." : "Alterar password"}
             </Button>
           </div>
-        </div>
+        </form>
       </div>
     </div>
   );

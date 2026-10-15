@@ -161,7 +161,7 @@ create policy evaluations_delete on public.evaluations
 
 -- A pontuação e a classificação NEOP são recalculadas no servidor de base de
 -- dados a partir dos critérios, para que um cliente não possa gravar um valor
--- arbitrário. A regra está em 04_scoring.sql.
+-- arbitrário. A regra está em 03_scoring.sql.
 
 -- ─── suspects ────────────────────────────────────────────────────────────────
 -- Acompanham a avaliação a que pertencem.

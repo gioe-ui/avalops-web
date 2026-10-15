@@ -1,0 +1,17 @@
+# Propõe atualizações de segurança e de versões, em pull requests separados,
+# para as dependências npm e para as actions do workflow (fixadas por SHA).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dependencias:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
