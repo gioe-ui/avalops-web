@@ -59,10 +59,10 @@ jobs:
         # aberto diretamente ou recarregado.
         run: cp dist/index.html dist/404.html
 
-      - name: Impedir o processamento pelo Jekyll
-        run: touch dist/.nojekyll
-
-      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+      # Sem .nojekyll: a publicação por GitHub Actions não passa pelo Jekyll, e a
+      # v4 desta action já não envia ficheiros ocultos. A v4 fixa por SHA a
+      # action de que depende (upload-artifact); a v3 usava-a por etiqueta.
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
         if: github.event_name != 'pull_request'
         with:
           path: dist

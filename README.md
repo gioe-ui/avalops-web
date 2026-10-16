@@ -95,6 +95,8 @@ A segurança depende também destas opções, que não estão no código:
 | Authentication → URL Configuration | Endereço do site nas *Redirect URLs* (ex.: `https://<utilizador>.github.io/<repositório>/`) | Confirmação de email e recuperação de password |
 | Authentication → Rate Limits / Attack Protection | Limites de tentativas e CAPTCHA | Dificulta ataques de força bruta ao login |
 
+| Authentication → Sessions | Tempo máximo de inatividade e de duração da sessão | O fim de sessão por inatividade da aplicação (30 min) é feito no browser; este é o equivalente no servidor, que vale mesmo para um token esquecido |
+
 Os nomes dos menus mudam com alguma frequência no Supabase; se algum não existir com este nome,
 procurar a opção equivalente. Algumas (por exemplo, a deteção de passwords comprometidas ou o
 limite de duração das sessões) podem depender do plano contratado — confirmar no painel.
@@ -145,6 +147,14 @@ Em Settings → Secrets and variables → Actions → Variables, criar:
 Ambos estão em Supabase → Project Settings → API. São variáveis, não segredos: a chave anónima é
 pública por natureza e vai dentro do bundle. **Nunca colocar aqui a `service_role` key** — essa
 ignora todas as políticas de segurança.
+
+> **Origem partilhada.** Um site de projeto do GitHub Pages fica em
+> `https://<conta>.github.io/<repositório>/`, e para o browser essa origem é a mesma de **qualquer
+> outro site Pages da mesma conta** (outros repositórios, ou o repositório `<conta>.github.io`).
+> A sessão do Supabase fica no `localStorage`, que é por origem: uma página de outro site Pages da
+> conta consegue lê-la, incluindo uma sessão que já passou o segundo fator. Enquanto não houver um
+> domínio próprio (Settings → Pages → Custom domain, por exemplo `gioe.<domínio-institucional>`),
+> a conta que publica esta aplicação **não pode publicar mais nenhum site Pages**.
 
 Um push para `main` publica o site. O workflow deteta o nome do repositório e ajusta o caminho base
 sozinho, por isso funciona em qualquer repositório sem alterações. Antes do build corre

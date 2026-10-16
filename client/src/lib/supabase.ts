@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { traduzirErro } from "./erros";
+import { registoDeAtividade, tempoAteInatividade as calcularTempoAteInatividade } from "./inatividade";
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -71,7 +72,6 @@ export const supabase = createClient(url ?? "https://exemplo.supabase.co", anonK
 supabase.auth.onAuthStateChange((evento) => {
   if (evento === "PASSWORD_RECOVERY") {
     gravarLocal(CHAVE_RECUPERACAO, "1");
-    gravarLocal(CHAVE_ATIVIDADE, String(Date.now()));
   } else if (evento === "SIGNED_OUT") {
     gravarLocal(CHAVE_RECUPERACAO, null);
   }
@@ -99,17 +99,72 @@ export function lerMotivoSaida(): string | null {
   }
 }
 
-export const marcarAtividade = () => gravarLocal(CHAVE_ATIVIDADE, String(Date.now()));
+// ─── Inatividade ─────────────────────────────────────────────────────────────
+// A última atividade fica ligada ao identificador da sessão: as regras estão em
+// lib/inatividade.ts.
 
-export function sessaoInativaHaDemasiado() {
-  const ultima = Number(lerLocal(CHAVE_ATIVIDADE) ?? 0);
-  return ultima > 0 && Date.now() - ultima > LIMITE_INATIVIDADE_MS;
+/** Token de acesso guardado pelo supabase-js, lido de forma síncrona. */
+function tokenGuardado(): string | undefined {
+  try {
+    const valor = lerLocal(STORAGE_KEY);
+    return valor ? (JSON.parse(valor).access_token as string | undefined) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
-/** Termina apenas a sessão deste browser (não as de outros dispositivos). */
+/** Há uma sessão guardada neste browser (sem a validar junto do servidor). */
+export const temSessaoGuardada = () => lerLocal(STORAGE_KEY) !== null;
+
+/** Regista atividade agora, na sessão guardada. Sem sessão não há nada a registar. */
+export function marcarAtividade(accessToken = tokenGuardado()) {
+  if (!accessToken) return;
+  gravarLocal(CHAVE_ATIVIDADE, registoDeAtividade(accessToken, Date.now()));
+}
+
+/** Milissegundos até a sessão ser considerada inativa (ver lib/inatividade.ts). */
+export const tempoAteInatividade = (accessToken: string | undefined) =>
+  calcularTempoAteInatividade(accessToken, lerLocal(CHAVE_ATIVIDADE), Date.now(), LIMITE_INATIVIDADE_MS);
+
+export function sessaoInativaHaDemasiado(accessToken: string | undefined) {
+  const restante = tempoAteInatividade(accessToken);
+  return restante !== null && restante <= 0;
+}
+
+/**
+ * Depois de a sessão terminar (botão Sair, inatividade, noutro separador, ou
+ * sessão revogada): limpa as marcas locais e recarrega a aplicação.
+ *
+ * Recarregar é deliberado. Esvaziar a cache do React Query não chega: os
+ * componentes montados continuam a mostrar os dados que já tinham, e com eles
+ * ainda se podia exportar ou imprimir. Um carregamento novo não deixa nada em
+ * memória.
+ */
+export function aposTerminarSessao() {
+  gravarLocal(CHAVE_RECUPERACAO, null);
+  gravarLocal(CHAVE_ATIVIDADE, null);
+  try {
+    sessionStorage.removeItem("gioe-entrada-registada");
+  } catch {
+    // sem armazenamento
+  }
+  window.location.replace(import.meta.env.BASE_URL);
+}
+
+/**
+ * Termina apenas a sessão deste browser (não as de outros dispositivos).
+ *
+ * Se o pedido ao servidor falhar (sem rede), o supabase-js mantém a sessão
+ * guardada; aqui ela é apagada na mesma, para que "Sair" saia sempre.
+ */
 export async function terminarSessaoLocal() {
   gravarLocal(CHAVE_RECUPERACAO, null);
-  await supabase.auth.signOut({ scope: "local" });
+  const { error } = await supabase.auth.signOut({ scope: "local" });
+  if (error) {
+    gravarLocal(STORAGE_KEY, null);
+    gravarLocal(`${STORAGE_KEY}-code-verifier`, null);
+    aposTerminarSessao();
+  }
 }
 
 /**
@@ -126,11 +181,11 @@ export const inicializacao: Promise<void> = (async () => {
     const { data } = await supabase.auth.getSession();
     if (!data.session) return;
 
-    if (sessaoInativaHaDemasiado()) {
+    if (sessaoInativaHaDemasiado(data.session.access_token)) {
       registarMotivoSaida("inatividade");
       await terminarSessaoLocal();
-    } else if (!lerLocal(CHAVE_ATIVIDADE)) {
-      marcarAtividade();
+    } else {
+      marcarAtividade(data.session.access_token);
     }
   } catch {
     // Falha de rede ao arrancar: as consultas seguintes tratam o erro.

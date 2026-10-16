@@ -21,6 +21,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   concluirRecuperacao,
   inicializacao,
+  recuperacaoPendente,
   marcarAtividade,
   supabase,
   terminarSessaoLocal,
@@ -63,6 +64,12 @@ export interface EstadoSessao {
   nivel: "aal1" | "aal2" | null;
   /** Fator TOTP já confirmado, se existir. */
   fatorId: string | null;
+  /**
+   * Entrou pela ligação de recuperação e ainda não definiu a nova password.
+   * Faz parte do estado (e não é lido à parte) para que o portão volte a
+   * renderizar quando muda.
+   */
+  recuperacao: boolean;
 }
 
 export interface RegistoAuditoria {
@@ -175,6 +182,7 @@ export const auth = {
       perfil: data as Profile,
       nivel: (nivel?.currentLevel as EstadoSessao["nivel"]) ?? null,
       fatorId: fator?.id ?? null,
+      recuperacao: recuperacaoPendente(),
     };
   },
 

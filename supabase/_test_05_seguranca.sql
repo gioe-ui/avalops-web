@@ -220,6 +220,39 @@ select public.t_erro(
     (select id from public.evaluations where nuipc = 'AVAL-RPC')),
   '42501', 'terceiro não altera a avaliação de outro pela gravação atómica');
 
+-- ─── Suspeitos: limite e data em todos os caminhos ───────────────────────────
+select public.set_current_user('22222222-2222-2222-2222-222222222222');
+select public.t_erro(
+  $q$insert into public.suspects ("evaluationId", nome)
+     select id, 'massa_' || g from public.evaluations, generate_series(1, 60) g where nuipc = 'AVAL-AUTOR'$q$,
+  'máximo 50', 'escrita direta de mais de 50 suspeitos numa avaliação recusada');
+select public.t_ok(
+  (select count(*) from public.suspects s join public.evaluations e on e.id = s."evaluationId" where e.nuipc = 'AVAL-AUTOR') = 0,
+  'o lote recusado não deixa nenhum suspeito para trás');
+insert into public.suspects ("evaluationId", nome, "createdAt")
+select id, 'Data forjada', '2001-01-01' from public.evaluations where nuipc = 'AVAL-AUTOR';
+select public.t_ok(
+  (select "createdAt" > now() - interval '1 minute' from public.suspects where nome = 'Data forjada'),
+  'data de criação do suspeito definida pelo servidor');
+delete from public.suspects where nome = 'Data forjada';
+select public.t_ok(
+  (public.gioe_guardar_avaliacao(
+     (select id from public.evaluations where nuipc = 'AVAL-RPC'),
+     '{"nuipc":"AVAL-RPC","tipoCriminal":"homicidio","posseArma":"registada"}',
+     (select jsonb_agg(jsonb_build_object('nome', 'S' || g)) from generate_series(1, 50) g)
+   ) ->> 'id') is not null,
+  'gravação atómica com exatamente 50 suspeitos é aceite');
+select public.t_ok(
+  (public.gioe_guardar_avaliacao(
+     (select id from public.evaluations where nuipc = 'AVAL-RPC'),
+     '{"nuipc":"AVAL-RPC","tipoCriminal":"homicidio","posseArma":"registada"}',
+     '[{"nome":"Suspeito A","nif":"123"},{"nome":"Suspeito B"}]'
+   ) ->> 'id') is not null,
+  'gravação atómica volta a 2 suspeitos (os 50 anteriores são substituídos)');
+
+-- Os testes seguintes partem da sessão do terceiro.
+select public.set_current_user('44444444-4444-4444-4444-444444444444');
+
 -- ─── Operações ───────────────────────────────────────────────────────────────
 select public.t_erro(
   $q$insert into public.operations ("evaluationId", missao)

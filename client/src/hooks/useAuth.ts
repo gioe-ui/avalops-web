@@ -9,6 +9,7 @@ import { useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
 import { api } from "@/lib/api";
+import { aposTerminarSessao } from "@/lib/supabase";
 
 export function useAuth() {
   const queryClient = useQueryClient();
@@ -20,17 +21,14 @@ export function useAuth() {
   });
 
   const logout = useCallback(async () => {
+    // Esconde já os dados; aposTerminarSessao recarrega a aplicação, que é o
+    // que garante que nada fica em memória (esvaziar a cache não chegava: os
+    // ecrãs montados continuavam a mostrar o que tinham).
+    queryClient.setQueryData(["auth", "sessao"], null);
     try {
       await api.auth.logout();
     } finally {
-      // Nada do que estava em cache pode ficar para quem usar o computador a
-      // seguir.
-      queryClient.clear();
-      try {
-        sessionStorage.removeItem("gioe-entrada-registada");
-      } catch {
-        // sem armazenamento
-      }
+      aposTerminarSessao();
     }
   }, [queryClient]);
 
@@ -51,6 +49,8 @@ export function useAuth() {
       /** Tem segundo fator registado mas a sessão ainda só passou a password. */
       precisaVerificarMfa: Boolean(user) && Boolean(estado?.fatorId) && !mfaOk,
       fatorId: estado?.fatorId ?? null,
+      /** Entrou por uma ligação de recuperação e ainda não definiu a nova password. */
+      recuperacao: Boolean(estado?.recuperacao),
       mfaOk,
       ativo,
       /** Pode usar a aplicação: aprovado, ativo e com o segundo fator. */

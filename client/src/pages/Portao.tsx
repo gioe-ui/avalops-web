@@ -2,7 +2,6 @@ import { useEffect, type ReactNode } from "react";
 import { Loader2, WifiOff } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { api } from "@/lib/api";
-import { recuperacaoPendente } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import EcraAcesso from "@/components/EcraAcesso";
 import Auth from "./Auth";
@@ -25,7 +24,7 @@ export default function Portao({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const { user, loading, error } = auth;
 
-  const tudoOk = Boolean(user) && auth.isApproved && !recuperacaoPendente();
+  const tudoOk = Boolean(user) && auth.isApproved && !auth.recuperacao;
 
   // Hora da última entrada, uma vez por sessão do separador.
   useEffect(() => {
@@ -61,7 +60,7 @@ export default function Portao({ children }: { children: ReactNode }) {
 
   if (!user) return <Auth />;
   if (auth.precisaVerificarMfa) return <MfaVerificar />;
-  if (recuperacaoPendente()) return <DefinirPassword />;
+  if (auth.recuperacao) return <DefinirPassword />;
   if (!auth.ativo) return <PendingApproval desativada />;
   if (auth.precisaRegistarMfa) return <MfaRegistar />;
   if (user.approved !== 1) return <PendingApproval />;

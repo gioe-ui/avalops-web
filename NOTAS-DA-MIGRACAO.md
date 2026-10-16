@@ -196,4 +196,6 @@ exportações, nova paleta institucional (RAL 7013).
 
 **Por decidir fora do código.** O repositório é público e expõe o método de pontuação NEOP; o email
 real do primeiro administrador continua no histórico do git; a conta GitHub que publica o site
-deve ter 2FA e o ramo `main` protegido.
+deve ter 2FA e o ramo `main` protegido; e o site partilha a origem `<conta>.github.io` com qualquer
+outro site Pages da conta, que conseguiria ler a sessão guardada no browser — a solução é um
+domínio próprio (ver README).

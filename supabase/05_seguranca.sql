@@ -533,6 +533,65 @@ do $$ begin
     ) not valid;
 exception when duplicate_object then null; end $$;
 
+-- ─── 7b. Suspeitos ───────────────────────────────────────────────────────────
+-- Data de criação definida pelo servidor, e no máximo 50 suspeitos por
+-- avaliação em QUALQUER caminho de escrita (a gravação atómica já o verificava,
+-- mas a escrita direta na tabela continua a ser possível para o autor).
+create or replace function public.suspects_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    new."createdAt" := now();
+  else
+    new."createdAt" := old."createdAt";
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists suspects_guard on public.suspects;
+create trigger suspects_guard
+  before insert or update on public.suspects
+  for each row execute function public.suspects_guard();
+
+-- Por instrução e depois de escrita: vê o lote inteiro de uma vez (um INSERT
+-- com 200 linhas é recusado como um todo).
+create or replace function public.suspects_limite()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if exists (
+    select 1
+    from public.suspects s
+    where s."evaluationId" in (select distinct "evaluationId" from novas)
+    group by s."evaluationId"
+    having count(*) > 50
+  ) then
+    raise exception 'Demasiados suspeitos numa só avaliação (máximo 50)';
+  end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists suspects_limite_insert on public.suspects;
+create trigger suspects_limite_insert
+  after insert on public.suspects
+  referencing new table as novas
+  for each statement execute function public.suspects_limite();
+
+drop trigger if exists suspects_limite_update on public.suspects;
+create trigger suspects_limite_update
+  after update on public.suspects
+  referencing new table as novas
+  for each statement execute function public.suspects_limite();
+
 -- ─── 8. Notificações ─────────────────────────────────────────────────────────
 -- O cliente envia apenas a operação. O militar, o telefone, a mensagem e a
 -- ligação wa.me são preenchidos aqui, a partir dos dados gravados — não há
@@ -926,5 +985,7 @@ revoke execute on function public.evaluations_guard() from public, anon, authent
 revoke execute on function public.operations_guard() from public, anon, authenticated;
 revoke execute on function public.notifications_guard() from public, anon, authenticated;
 revoke execute on function public.audit_trigger() from public, anon, authenticated;
+revoke execute on function public.suspects_guard() from public, anon, authenticated;
+revoke execute on function public.suspects_limite() from public, anon, authenticated;
 
 commit;
