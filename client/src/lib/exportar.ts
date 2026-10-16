@@ -4,6 +4,21 @@ import { formatarDataHora } from "./datas";
 type Celula = string | number | null | undefined;
 
 /**
+ * Um campo de texto que contém só um número ("12", "35,5", "1 200") passa a
+ * número, para o Excel o poder somar; tudo o resto fica como estava.
+ *
+ * "1.200" fica como texto: tanto pode ser mil e duzentos (separador de
+ * milhares) como um e dois décimos, e um número errado é pior do que texto.
+ */
+export function numeroSePossivel(valor: Celula): Celula {
+  if (typeof valor !== "string") return valor;
+  const limpo = valor.trim().replace(/\s/g, "");
+  if (/^-?\d+(,\d+)?$/.test(limpo)) return Number(limpo.replace(",", "."));
+  if (/^-?\d+\.\d+$/.test(limpo) && !/\.\d{3}$/.test(limpo)) return Number(limpo);
+  return valor;
+}
+
+/**
  * Exporta uma folha de Excel com a marca de classificação no topo e no fim.
  *
  * Usa `write-excel-file`, que só escreve ficheiros e depende apenas de uma

@@ -101,11 +101,17 @@ export function dataParaGdh(data: Date): string {
   );
 }
 
-/** Horas entre dois GDH (com uma casa decimal), ou "" se algum for inválido. */
-export function horasEntreGdh(inicio: string | null | undefined, fim: string | null | undefined): string {
+/** Horas entre dois GDH (com uma casa decimal), ou null se algum for inválido. Para exportar. */
+export function horasEntreGdhNumero(inicio: string | null | undefined, fim: string | null | undefined): number | null {
   const a = gdhParaData(inicio);
   const b = gdhParaData(fim);
-  if (!a || !b || b < a) return "";
+  if (!a || !b || b < a) return null;
   const horas = (b.getTime() - a.getTime()) / 3_600_000;
-  return (Math.round(horas * 10) / 10).toString().replace(".", ",");
+  return Math.round(horas * 10) / 10;
+}
+
+/** Horas entre dois GDH para mostrar (vírgula decimal), ou "" se algum for inválido. */
+export function horasEntreGdh(inicio: string | null | undefined, fim: string | null | undefined): string {
+  const horas = horasEntreGdhNumero(inicio, fim);
+  return horas === null ? "" : horas.toString().replace(".", ",");
 }

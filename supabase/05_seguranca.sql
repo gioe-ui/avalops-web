@@ -124,13 +124,15 @@ create policy profiles_delete_admin on public.profiles
   for delete to authenticated
   using (public.is_admin() and approved = 0 and id <> auth.uid());
 
--- O próprio perfil só se edita depois do segundo fator; os administradores
--- editam qualquer um.
+-- O próprio perfil só se edita com a conta aprovada, ativa e com o segundo
+-- fator (is_approved cobre os três); os administradores editam qualquer um. Uma
+-- conta desativada deixa de poder mudar, por exemplo, o telefone para onde vão
+-- as notificações das operações que ainda tenha atribuídas.
 drop policy if exists profiles_update_self on public.profiles;
 create policy profiles_update_self on public.profiles
   for update to authenticated
-  using ((id = auth.uid() and public.mfa_ok()) or public.is_admin())
-  with check ((id = auth.uid() and public.mfa_ok()) or public.is_admin());
+  using ((id = auth.uid() and public.is_approved()) or public.is_admin())
+  with check ((id = auth.uid() and public.is_approved()) or public.is_admin());
 
 -- ─── 4. Privilégios dos perfis ───────────────────────────────────────────────
 create or replace function public.guard_profile_privileges()
@@ -190,6 +192,16 @@ security definer
 set search_path = public
 as $$
 begin
+  if old."role" = 'admin' and old.approved = 1 and old.active = 1
+     and (tg_op = 'DELETE' or not (new."role" = 'admin' and new.approved = 1 and new.active = 1))
+  then
+    -- Serializa a verificação: sem isto, dois administradores que se
+    -- desativassem um ao outro ao mesmo tempo veriam cada um o outro ainda
+    -- ativo, e o sistema ficaria sem nenhum. O bloqueio dura até ao fim da
+    -- transação; a consulta seguinte já vê o que a outra confirmou.
+    perform pg_advisory_xact_lock(hashtext('gioe:ultimo-administrador'));
+  end if;
+
   if old."role" = 'admin' and old.approved = 1 and old.active = 1
      and (tg_op = 'DELETE' or not (new."role" = 'admin' and new.approved = 1 and new.active = 1))
      and not exists (
@@ -509,6 +521,45 @@ drop trigger if exists operations_guard on public.operations;
 create trigger operations_guard
   before insert or update on public.operations
   for each row execute function public.operations_guard();
+
+-- As operações já gravadas têm o estado que o browser antigo calculava (com
+-- critérios diferentes em duas páginas). Uma alteração "vazia" feita aqui, do
+-- lado do servidor, passa cada uma pelo trigger acima e recalcula-o. Linha a
+-- linha, para que uma operação antiga com valores inválidos não impeça as
+-- restantes.
+create or replace function public.gioe_recalcular_operacoes()
+returns integer
+language plpgsql
+set search_path = public
+as $$
+declare
+  r record;
+  falhas integer := 0;
+begin
+  for r in select id from public.operations loop
+    begin
+      update public.operations set "createdAt" = "createdAt" where id = r.id;
+    exception when others then
+      -- Por exemplo, consumos negativos gravados antes desta migração.
+      falhas := falhas + 1;
+      raise warning 'Operação % não recalculada: %', r.id, sqlerrm;
+    end;
+  end loop;
+  return falhas;
+end;
+$$;
+
+-- Só para manutenção (SQL Editor); não é chamável pela API.
+revoke all on function public.gioe_recalcular_operacoes() from public, anon, authenticated;
+
+do $$
+declare
+  falhas integer := public.gioe_recalcular_operacoes();
+begin
+  if falhas > 0 then
+    raise warning '% operação(ões) não foram recalculadas (motivos acima); corrija os valores e volte a correr este ficheiro.', falhas;
+  end if;
+end $$;
 
 do $$ begin
   alter table public.operations

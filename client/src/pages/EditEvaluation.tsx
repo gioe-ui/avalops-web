@@ -24,10 +24,11 @@ export default function EditEvaluation() {
   const [form, setForm] = useState<FormState>(novoFormulario);
   const [suspects, setSuspects] = useState<Suspect[]>([]);
   const [carregado, setCarregado] = useState(false);
+  const [suspeitosCarregados, setSuspeitosCarregados] = useState(false);
 
   const { data: evaluation, isLoading, error } = trpc.evaluations.getById.useQuery({ id }, { enabled: valido });
 
-  const { data: suspeitosGravados } = trpc.suspects.getByEvaluationId.useQuery(
+  const suspeitosQuery = trpc.suspects.getByEvaluationId.useQuery(
     { evaluationId: id },
     { enabled: valido },
   );
@@ -42,8 +43,11 @@ export default function EditEvaluation() {
     setCarregado(true);
   }, [evaluation, carregado]);
 
+  // Copiados uma única vez: uma nova leitura não apaga o que já foi editado.
   useEffect(() => {
-    if (!suspeitosGravados) return;
+    const suspeitosGravados = suspeitosQuery.data;
+    if (!suspeitosGravados || suspeitosCarregados) return;
+    setSuspeitosCarregados(true);
     setSuspects(
       suspeitosGravados.map((s: any) => ({
         id: s.id,
@@ -56,7 +60,7 @@ export default function EditEvaluation() {
         observacoes: s.observacoes ?? "",
       })),
     );
-  }, [suspeitosGravados]);
+  }, [suspeitosQuery.data, suspeitosCarregados]);
 
   // Avaliação e suspeitos gravados numa só transação: se algo falhar, nada
   // muda (antes, os suspeitos eram apagados e reinseridos em pedidos separados).
@@ -136,9 +140,27 @@ export default function EditEvaluation() {
         <div className="bg-white p-4 sm:p-6 rounded-lg border border-ral-200 shadow-sm">
           <FormHeader subtitulo={`Avaliação n.º ${evaluation.id}`} />
 
+          {suspeitosQuery.isError && (
+            <div
+              role="alert"
+              className="no-print mb-4 flex items-center justify-between gap-3 rounded-lg border border-erro bg-erro-claro px-4 py-3 text-sm text-ral-900 flex-wrap"
+            >
+              <span>Não foi possível carregar os suspeitos: {suspeitosQuery.error.message}</span>
+              <Button size="sm" variant="outline" onClick={() => void suspeitosQuery.refetch()}>
+                Tentar de novo
+              </Button>
+            </div>
+          )}
+
           {/* fieldset desativado bloqueia todos os campos, incluindo os do Radix. */}
           <fieldset disabled={!podeEditar} className="min-w-0">
-            <EvaluationFields form={form} set={set} suspects={suspects} onSuspectsChange={setSuspects} />
+            <EvaluationFields
+              form={form}
+              set={set}
+              suspects={suspects}
+              onSuspectsChange={setSuspects}
+              readOnly={!podeEditar}
+            />
           </fieldset>
 
           <div className="flex gap-3 no-print">
@@ -155,7 +177,10 @@ export default function EditEvaluation() {
                     suspeitos: paraRegistoDeSuspeitos(suspects),
                   })
                 }
-                disabled={guardar.isPending}
+                // Gravar antes de os suspeitos chegarem enviaria uma lista vazia e
+                // apagava-os: o botão só fica ativo depois de carregarem.
+                disabled={guardar.isPending || !suspeitosCarregados}
+                title={suspeitosCarregados ? undefined : "A carregar os suspeitos…"}
               >
                 <Save className="w-5 h-5" />
                 {guardar.isPending ? "A guardar..." : "Guardar alterações"}

@@ -652,14 +652,16 @@ export const users = {
   },
 
   async getPending() {
-    return unwrap(
-      await supabase
+    return buscarTudo<Profile>((de, ate) =>
+      supabase
         .from("profiles")
-        .select("*")
+        .select("*", { count: "exact" })
         .eq("approved", 0)
         .eq("active", 1)
-        .order("createdAt", { ascending: false }),
-    ) as Profile[];
+        .order("createdAt", { ascending: false })
+        .order("id")
+        .range(de, ate),
+    );
   },
 
   async approve(input: { id: string }) {
@@ -805,14 +807,17 @@ export const operations = {
 
   /** Militares a quem se pode atribuir uma operação: aprovados e ativos. */
   async listMilitares() {
-    return unwrap(
-      await supabase
-        .from("profiles")
-        .select('id, "name", email, "rank", "phoneNumber", "mecanographicNumber"')
-        .eq("approved", 1)
-        .eq("active", 1)
-        .order("name"),
-    ) as Array<Pick<Profile, "id" | "name" | "email" | "rank" | "phoneNumber" | "mecanographicNumber">>;
+    return buscarTudo<Pick<Profile, "id" | "name" | "email" | "rank" | "phoneNumber" | "mecanographicNumber">>(
+      (de, ate) =>
+        supabase
+          .from("profiles")
+          .select('id, "name", email, "rank", "phoneNumber", "mecanographicNumber"', { count: "exact" })
+          .eq("approved", 1)
+          .eq("active", 1)
+          .order("name")
+          .order("id")
+          .range(de, ate),
+    );
   },
 
   /** Só administradores (imposto pela base de dados). */
@@ -850,17 +855,19 @@ export const operations = {
 
   async listMilitarOperations() {
     const user = await utilizadorAtual();
-    return unwrap(
-      await supabase
+    return buscarTudo<Operation>((de, ate) =>
+      supabase
         .from("operations")
         .select(
           'id, "operacaoNumero", "dataOp", "scheduledDate", "operacaoPreenchida", "consumosPreenchidos", ' +
             '"observacoesPreenchidas", "flaggedForCompletion", "flaggedAt", "preenchimentoSecOp", "cmdtOp", ' +
             '"efetivTotalOperacao"',
+          { count: "exact" },
         )
         .eq("assignedUserId", user.id)
-        .order("id", { ascending: false }),
-    ) as unknown as Operation[];
+        .order("id", { ascending: false })
+        .range(de, ate),
+    );
   },
 
   /**
@@ -875,9 +882,12 @@ export const operations = {
       .not("assignedUserId", "is", null)
       .eq("flaggedForCompletion", 0)
       .or("operacaoPreenchida.eq.0,consumosPreenchidos.eq.0,observacoesPreenchidas.eq.0")
-      .select("id");
+      .select('id, "flaggedForCompletion"');
     if (error) throw traduzirErro(error);
-    return { flagged: data?.length ?? 0 };
+    // A base de dados recalcula o estado de preenchimento em cada escrita e
+    // retira a sinalização a um relatório que afinal está completo: só contam
+    // as linhas que ficaram de facto sinalizadas.
+    return { flagged: (data ?? []).filter((o) => o.flaggedForCompletion === 1).length };
   },
 };
 
@@ -950,7 +960,7 @@ export const audit = {
    */
   async registar(input: { acao: "EXPORT" | "PRINT"; detalhe: Record<string, unknown> }) {
     const { error } = await supabase.rpc("registar_evento", { p_acao: input.acao, p_detalhe: input.detalhe });
-    if (error) console.warn("[auditoria] não foi possível registar o evento", error.message);
+    if (error && import.meta.env.DEV) console.warn("[auditoria] não foi possível registar o evento", error.message);
     return { success: !error };
   },
 };

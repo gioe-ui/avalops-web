@@ -127,13 +127,14 @@ create trigger profiles_guard_privileges
 
 -- ─── evaluations ─────────────────────────────────────────────────────────────
 --
--- DECISÃO A CONFIRMAR: qualquer utilizador aprovado lê todas as avaliações.
--- É o comportamento da aplicação original (getById e as estatísticas liam a
--- tabela inteira para qualquer sessão; só a listagem do Dashboard é que
--- filtrava por autor). A listagem continua a filtrar no cliente.
+-- DECIDIDO (revisão de outubro de 2026): qualquer utilizador aprovado lê todas
+-- as avaliações e os respetivos suspeitos. É o comportamento da aplicação
+-- original e é necessário às estatísticas globais. O controlo compensatório é
+-- o registo de auditoria (05_seguranca.sql), que guarda quem altera o quê e
+-- quem exporta ou imprime.
 --
--- Para restringir a leitura ao próprio autor, substituir a política
--- evaluations_select por:
+-- Alternativa, se a decisão mudar: restringir a leitura ao próprio autor,
+-- substituindo a política evaluations_select por:
 --   using (public.is_approved() and ("userId" = auth.uid() or public.is_admin()))
 -- Nesse caso as estatísticas globais deixam de funcionar para não-admins e
 -- passam a precisar de uma função SECURITY DEFINER dedicada.

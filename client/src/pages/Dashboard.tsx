@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { api, cterDaAvaliacao } from "@/lib/api";
@@ -116,19 +116,29 @@ export default function Dashboard() {
   };
 
   const selecionaveis = (evaluations ?? []).filter(podeAlterar);
+  // Só conta o que está à vista: uma avaliação selecionada que deixou de
+  // aparecer (por mudança de filtro ou nova leitura) nunca é eliminada.
+  const selecionadas: number[] = selecionaveis
+    .filter((e: any) => selectedEvaluations.has(e.id))
+    .map((e: any) => e.id);
+
+  // Mudar os filtros começa uma seleção nova.
+  useEffect(() => {
+    setSelectedEvaluations(new Set());
+  }, [filterNeop, filterAvaliador, filterCter]);
 
   const handleSelectAll = (checked: boolean) => {
     setSelectedEvaluations(checked ? new Set(selecionaveis.map((e: any) => e.id)) : new Set());
   };
 
   const handleDeleteSelected = () => {
-    if (selectedEvaluations.size === 0) return;
+    if (selecionadas.length === 0) return;
     if (
       confirm(
-        `Eliminar ${selectedEvaluations.size} avaliação(ões)? As operações e os suspeitos associados são eliminados também.`,
+        `Eliminar ${selecionadas.length} avaliação(ões)? As operações e os suspeitos associados são eliminados também.`,
       )
     ) {
-      deleteManyMutation.mutate({ ids: Array.from(selectedEvaluations) });
+      deleteManyMutation.mutate({ ids: selecionadas });
     }
   };
 
@@ -253,10 +263,10 @@ export default function Dashboard() {
               <Search className="w-4 h-4" />
               Pesquisar
             </Button>
-            {selectedEvaluations.size > 0 && (
+            {selecionadas.length > 0 && (
               <Button onClick={handleDeleteSelected} variant="destructive" disabled={deleteManyMutation.isPending}>
                 <Trash2 className="w-4 h-4" />
-                Eliminar ({selectedEvaluations.size})
+                Eliminar ({selecionadas.length})
               </Button>
             )}
           </div>
@@ -279,7 +289,7 @@ export default function Dashboard() {
                   <input
                     type="checkbox"
                     aria-label="Selecionar todas as avaliações que pode eliminar"
-                    checked={selecionaveis.length > 0 && selectedEvaluations.size === selecionaveis.length}
+                    checked={selecionaveis.length > 0 && selecionadas.length === selecionaveis.length}
                     disabled={selecionaveis.length === 0}
                     onChange={(e) => handleSelectAll(e.target.checked)}
                   />

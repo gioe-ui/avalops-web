@@ -7,6 +7,7 @@ import {
   gdhValido,
   hojeLocal,
   horasEntreGdh,
+  horasEntreGdhNumero,
   inicioDoDia,
   mesDeData,
   normalizarGdh,
@@ -63,6 +64,13 @@ describe("GDH (DDHHMMMMMAA)", () => {
   it("não calcula horas com GDH inválidos ou fim antes do início", () => {
     expect(horasEntreGdh("16:30", "151630OUT26")).toBe("");
     expect(horasEntreGdh("161630OUT26", "151630OUT26")).toBe("");
+  });
+
+  it("exporta as horas como número", () => {
+    expect(horasEntreGdhNumero("152200OUT26", "160130OUT26")).toBe(3.5);
+    expect(horasEntreGdhNumero("151630OUT26", "151630OUT26")).toBe(0);
+    expect(horasEntreGdhNumero("161630OUT26", "151630OUT26")).toBeNull();
+    expect(horasEntreGdhNumero(null, "151630OUT26")).toBeNull();
   });
 });
 

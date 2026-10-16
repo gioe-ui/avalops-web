@@ -124,6 +124,9 @@ select public.t_ok(
 select public.set_current_user('22222222-2222-2222-2222-222222222222');
 select public.t_ok((select count(*) from public.evaluations) = 0,
   'utilizador desativado não lê nada');
+select public.t_ok(
+  public.t_linhas($q$update public.profiles set "phoneNumber" = '000' where id = '22222222-2222-2222-2222-222222222222'$q$) = 0,
+  'utilizador desativado não altera o próprio perfil');
 
 select public.set_current_user('11111111-1111-1111-1111-111111111111');
 update public.profiles set active = 1 where id = '22222222-2222-2222-2222-222222222222';
@@ -332,6 +335,36 @@ select public.t_ok(
   public.t_linhas($q$delete from public.operations where missao = 'OP-AUTOR'$q$) = 0,
   'terceiro não elimina a operação');
 
+-- Operação antiga com o estado calculado de outra forma (como o browser fazia):
+-- a função que a migração corre recalcula-o e retira a sinalização.
+reset role;
+alter table public.operations disable trigger operations_guard;
+update public.operations
+   set "operacaoPreenchida" = 0, "consumosPreenchidos" = 0, "flaggedForCompletion" = 1, "flaggedAt" = now()
+ where missao = 'OP-AUTOR';
+alter table public.operations enable trigger operations_guard;
+select public.set_current_user(null);
+select public.t_ok(public.gioe_recalcular_operacoes() = 0, 'recálculo das operações corre sem falhas');
+-- Uma linha antiga inválida (consumos negativos de antes da migração) não
+-- impede o recálculo das outras: é contada e saltada.
+alter table public.operations disable trigger operations_guard;
+alter table public.operations drop constraint operations_consumos_nao_negativos_chk;
+insert into public.operations ("evaluationId", "userId", missao, "municoesArmasAuto9Mm")
+select id, '22222222-2222-2222-2222-222222222222', 'OP-ANTIGA', -3 from public.evaluations where nuipc = 'AVAL-RPC';
+alter table public.operations
+  add constraint operations_consumos_nao_negativos_chk check (coalesce("municoesArmasAuto9Mm", 0) >= 0) not valid;
+alter table public.operations enable trigger operations_guard;
+update public.operations set "operacaoPreenchida" = 0 where missao = 'OP-AUTOR';
+select public.t_ok(public.gioe_recalcular_operacoes() = 1, 'recálculo salta e conta a operação antiga inválida');
+delete from public.operations where missao = 'OP-ANTIGA';
+select public.t_ok(
+  (select "operacaoPreenchida" = 1 and "consumosPreenchidos" = 1 and "observacoesPreenchidas" = 1
+          and "flaggedForCompletion" = 0 and "flaggedAt" is null
+   from public.operations where missao = 'OP-AUTOR'),
+  'recálculo corrige o estado de preenchimento das operações antigas');
+set local role authenticated;
+select public.set_current_user('44444444-4444-4444-4444-444444444444');
+
 -- ─── Notificações ────────────────────────────────────────────────────────────
 select public.t_erro(
   $q$insert into public.notifications ("operationId", "userId", "phoneNumber", message, "whatsappLink")
@@ -412,6 +445,8 @@ select public.t_ok(
 -- ─── Funções internas não são chamáveis pela API ─────────────────────────────
 select public.t_erro($q$select public.audit_trigger()$q$, '42501',
   'funções de trigger não são executáveis por utilizadores');
+select public.t_erro($q$select public.gioe_recalcular_operacoes()$q$, '42501',
+  'recálculo das operações não é executável por utilizadores');
 
 reset role;
 set local role anon;

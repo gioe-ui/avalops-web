@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
-import { MESES, formatarData, horasEntreGdh, mesDeData } from "@/lib/datas";
-import { exportarFolha } from "@/lib/exportar";
+import { MESES, formatarData, horasEntreGdh, horasEntreGdhNumero, mesDeData } from "@/lib/datas";
+import { exportarFolha, numeroSePossivel } from "@/lib/exportar";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -101,6 +101,14 @@ export default function OperationsStatistics() {
   }, [months]);
 
   const geriveis = (operations ?? []).filter(podeGerir);
+  // Só conta o que está à vista: uma operação selecionada noutro mês nunca é
+  // eliminada por engano.
+  const selecionadas: number[] = geriveis.filter((op: any) => selectedIds.has(op.id)).map((op: any) => op.id);
+
+  // Mudar de mês começa uma seleção nova.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [selectedMonth]);
 
   const handleSelectAll = (checked: boolean) => {
     setSelectedIds(checked ? new Set(geriveis.map((op: any) => op.id)) : new Set());
@@ -187,22 +195,22 @@ export default function OperationsStatistics() {
         mesDeData(op.dataOp),
         op.gdhSaidaUi || "",
         op.gdhEntradaUi || "",
-        horasEntreGdh(op.gdhSaidaUi, op.gdhEntradaUi),
+        horasEntreGdhNumero(op.gdhSaidaUi, op.gdhEntradaUi),
         op.cmdtForcaReuniao || "",
         op.cmdtOp || "",
         "",
         "",
         "",
-        op.efetivTotalOperacao || "",
-        op.viaturasCaracterizadasOperacao || "",
-        op.kmTotaisOperacao || "",
+        numeroSePossivel(op.efetivTotalOperacao),
+        op.viaturasCaracterizadasOperacao ?? "",
+        numeroSePossivel(op.kmTotaisOperacao),
         op.cterOperacao || "",
         op.dterOperacao || "",
         op.pterZaOperacao || "",
         op.entidadeSolicitadora || "",
-        op.forcaTitularInqueritos || "",
-        op.custosCombustiveis || "",
-        op.custosPortagens || "",
+        op.forcaTitularInqueritos ?? "",
+        numeroSePossivel(op.custosCombustiveis),
+        numeroSePossivel(op.custosPortagens),
         op.obsVisados || "",
         "",
         "",
@@ -231,7 +239,7 @@ export default function OperationsStatistics() {
   };
 
   const isLoading = monthsLoading || operationsLoading;
-  const allSelected = geriveis.length > 0 && selectedIds.size === geriveis.length;
+  const allSelected = geriveis.length > 0 && selecionadas.length === geriveis.length;
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -273,10 +281,10 @@ export default function OperationsStatistics() {
           </SelectContent>
         </Select>
 
-        {selectedIds.size > 0 && (
+        {selecionadas.length > 0 && (
           <Button onClick={() => setShowDeleteDialog(true)} variant="destructive" size="sm">
             <Trash2 className="w-4 h-4" />
-            Eliminar selecionadas ({selectedIds.size})
+            Eliminar selecionadas ({selecionadas.length})
           </Button>
         )}
       </div>
@@ -405,13 +413,13 @@ export default function OperationsStatistics() {
           <AlertDialogHeader>
             <AlertDialogTitle>Confirmar eliminação</AlertDialogTitle>
             <AlertDialogDescription>
-              Eliminar {selectedIds.size} operação(ões)? Esta ação não pode ser desfeita.
+              Eliminar {selecionadas.length} operação(ões)? Esta ação não pode ser desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteMany.mutate({ ids: Array.from(selectedIds) })}
+              onClick={() => deleteMany.mutate({ ids: selecionadas })}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
               Eliminar

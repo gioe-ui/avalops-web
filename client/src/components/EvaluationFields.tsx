@@ -74,6 +74,8 @@ interface EvaluationFieldsProps {
   set: <K extends keyof FormState>(key: K, value: FormState[K]) => void;
   suspects: Suspect[];
   onSuspectsChange: (suspects: Suspect[]) => void;
+  /** Só consulta: os suspeitos aparecem todos abertos, sem adicionar nem remover. */
+  readOnly?: boolean;
 }
 
 export function EvaluationFields({
@@ -81,6 +83,7 @@ export function EvaluationFields({
   set,
   suspects,
   onSuspectsChange,
+  readOnly = false,
 }: EvaluationFieldsProps) {
   const { pontuacao, neop, complexidade, descricao, largura, neopColor, semTipoCriminal } =
     avaliarFormulario(form);
@@ -269,7 +272,7 @@ export function EvaluationFields({
           </div>
         </div>
         <div className="border-t pt-6">
-          <SuspectForm suspects={suspects} onSuspectsChange={onSuspectsChange} />
+          <SuspectForm suspects={suspects} onSuspectsChange={onSuspectsChange} readOnly={readOnly} />
         </div>
       </Section>
 

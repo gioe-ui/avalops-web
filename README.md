@@ -94,8 +94,7 @@ A segurança depende também destas opções, que não estão no código:
 | Authentication → Multi-Factor | **TOTP** ativo | Sem isto ninguém consegue registar o segundo fator e ninguém acede a dados |
 | Authentication → URL Configuration | Endereço do site nas *Redirect URLs* (ex.: `https://<utilizador>.github.io/<repositório>/`) | Confirmação de email e recuperação de password |
 | Authentication → Rate Limits / Attack Protection | Limites de tentativas e CAPTCHA | Dificulta ataques de força bruta ao login |
-
-| Authentication → Sessions | Tempo máximo de inatividade e de duração da sessão | O fim de sessão por inatividade da aplicação (30 min) é feito no browser; este é o equivalente no servidor, que vale mesmo para um token esquecido |
+| Authentication → Sessions | Tempo máximo de inatividade e de duração da sessão | O fim de sessão por inatividade da aplicação (30 min) é feito no browser; este é o equivalente no servidor, que vale mesmo para um token esquecido. Pode só existir nos planos pagos (confirmar no painel) |
 
 Os nomes dos menus mudam com alguma frequência no Supabase; se algum não existir com este nome,
 procurar a opção equivalente. Algumas (por exemplo, a deteção de passwords comprometidas ou o

@@ -454,23 +454,25 @@ export default function OperationForm() {
           </div>
         ) : null}
 
-        <fieldset disabled={!podeEditar} className="min-w-0">
-          <div className="bg-white rounded-lg border border-ral-200 shadow-sm p-4 sm:p-8">
-            <Tabs defaultValue="referencia" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 sm:grid-cols-5 mb-6 h-auto bg-ral-100">
-                {[
-                  ["referencia", "Referência"],
-                  ["reuniao", "Reunião"],
-                  ["operacao", "Operação"],
-                  ["consumos", "Consumos"],
-                  ["observacoes", "Observações"],
-                ].map(([valor, rotulo]) => (
-                  <TabsTrigger key={valor} value={valor} className="text-xs sm:text-sm data-[state=active]:text-ral-900">
-                    {rotulo}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+        <div className="bg-white rounded-lg border border-ral-200 shadow-sm p-4 sm:p-8">
+          <Tabs defaultValue="referencia" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 sm:grid-cols-5 mb-6 h-auto bg-ral-100">
+              {[
+                ["referencia", "Referência"],
+                ["reuniao", "Reunião"],
+                ["operacao", "Operação"],
+                ["consumos", "Consumos"],
+                ["observacoes", "Observações"],
+              ].map(([valor, rotulo]) => (
+                <TabsTrigger key={valor} value={valor} className="text-xs sm:text-sm data-[state=active]:text-ral-900">
+                  {rotulo}
+                </TabsTrigger>
+              ))}
+            </TabsList>
 
+            {/* Só o conteúdo fica desativado: os separadores continuam a
+                funcionar, para que quem só pode ler veja todo o relatório. */}
+            <fieldset disabled={!podeEditar} className="min-w-0">
               <TabsContent value="referencia" className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {campoTexto("Ref. Filedoc / email / ordem verbal", "refFiledoc", "Referência")}
@@ -692,9 +694,9 @@ export default function OperationForm() {
                 {campoArea("Apontamentos e notas relevantes", "apontamentosNotas", 6)}
                 {campoArea("Croquis", "croquis", 4, "Descrição do croqui")}
               </TabsContent>
-            </Tabs>
-          </div>
-        </fieldset>
+            </fieldset>
+          </Tabs>
+        </div>
 
         <Dialog open={showAssignModal} onOpenChange={setShowAssignModal}>
           <DialogContent>
