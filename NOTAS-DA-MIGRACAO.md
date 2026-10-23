@@ -54,8 +54,8 @@ verificada.
 **A restrição a `@gnr.pt` era apenas de formulário.** Agora é imposta por um trigger na base de
 dados, que rejeita o registo independentemente do que o cliente enviar.
 
-**O primeiro administrador deixou de estar escrito no código.** Era `teixeira.vls@gnr.pt`, fixo em
-`server/auth.ts`. Passa a ser uma operação explícita (`supabase/04_seed_admin.sql`), feita uma vez.
+**O primeiro administrador deixou de estar escrito no código.** Estava fixo em `server/auth.ts`.
+Passa a ser uma operação explícita (`supabase/04_seed_admin.sql`), feita uma vez.
 
 ### Verificação feita
 
@@ -108,16 +108,15 @@ gerador a assumir que era provisório. Como a tabela de suspeitos existe e é pr
 formulário de avaliação, a página passou a usá-la. Confirme que o agrupamento (por nome, NIF e CC)
 corresponde ao que espera.
 
-**Quem pode ler as avaliações.** Qualquer utilizador aprovado lê todas as avaliações. É o
-comportamento da aplicação original — a consulta por identificador e as estatísticas liam a tabela
-inteira para qualquer sessão; só a listagem do histórico filtrava por autor. Mantive assim para não
-alterar o funcionamento, mas num sistema com dados desta natureza é uma decisão a tomar
-conscientemente. `supabase/02_policies.sql` tem, em comentário, a política alternativa que restringe
-a leitura ao autor, e a nota do que isso implica para as estatísticas.
+**Quem pode ler as avaliações.** Qualquer utilizador aprovado lê todas as avaliações e todos os
+suspeitos. Foi uma decisão tomada conscientemente na revisão de outubro de 2026 (manter a leitura
+global), com o registo de auditoria como controlo compensatório. `supabase/02_policies.sql` tem, em
+comentário, a política alternativa que restringe a leitura ao autor.
 
-**Eliminar utilizadores.** A interface elimina o perfil, o que retira imediatamente todo o acesso.
-A conta de autenticação em si só pode ser removida no painel do Supabase (Authentication → Users),
-porque isso exige a `service_role` key, que não pode existir num site estático.
+**Eliminar utilizadores.** Deixou de ser possível: eliminava em cascata tudo o que o militar tinha
+registado. Contas aprovadas desativam-se (acesso retirado de imediato, registos intactos); só os
+registos por aprovar se eliminam (rejeitar). Mesmo no painel do Supabase, apagar a conta de
+autenticação de quem tem trabalho registado é recusado pela base de dados.
 
 **Métodos de entrada asiáticos.** Os campos de texto traziam uma camada de composição para línguas
 como o chinês e o japonês, ligada a um contexto exportado pela caixa de diálogo. Foi removida.
@@ -140,10 +139,12 @@ do Supabase, que é backend outra vez e merece decisão própria.
 Supabase Storage, com políticas próprias.
 
 **Obrigações legais.** A aplicação trata dados pessoais de suspeitos e de militares num contexto de
-aplicação da lei. Num site publicamente acessível, isto tem implicações de RGPD que valem uma
-verificação com o encarregado de proteção de dados da instituição antes de entrar em produção —
-nomeadamente o facto de o GitHub Pages ser público e de qualquer pessoa poder chegar ao ecrã de
-entrada.
+aplicação da lei. O tratamento para fins de prevenção e investigação criminal enquadra-se, em
+princípio, na Diretiva (UE) 2016/680, transposta pela Lei n.º 59/2019, e não apenas no RGPD — o que
+implica, entre outras coisas, registos de quem recolhe, altera, consulta e apaga dados. O registo de
+auditoria cobre as alterações, exportações e impressões, mas **não as consultas**. Vale uma
+verificação com o encarregado de proteção de dados antes de entrar em produção, incluindo a região
+onde o projeto Supabase está alojado e o facto de o GitHub Pages ser público.
 
 ## Uma nota sobre o `trpc.ts`
 
@@ -151,3 +152,50 @@ O ficheiro `client/src/lib/trpc.ts` já não tem nada a ver com tRPC: é uma fac
 por cima do Supabase e do TanStack Query. Existe para que a migração não obrigasse a reescrever as
 dezassete páginas. Se um dia fizer sentido limpar, cada `trpc.x.y.useQuery(input)` troca-se por um
 `useQuery({ queryKey, queryFn: () => api.x.y(input) })` sem mais nada mudar.
+
+## Revisão de segurança (outubro de 2026)
+
+Revisão completa do código e do SQL, com cada ataque reproduzido num PostgreSQL local antes e
+depois da correção (`supabase/_test_05_seguranca.sql`). O essencial está em `05_seguranca.sql`.
+
+**Base de dados.**
+
+- Eliminar um utilizador apagava em cascata as avaliações, os suspeitos e as operações dele. Agora
+  as contas desativam-se e as chaves estrangeiras recusam a eliminação de quem tem trabalho.
+- Qualquer aprovado criava relatórios de operação em avaliações alheias, em nome de outra pessoa, e
+  vários por avaliação. Agora só o autor da avaliação (ou um administrador) cria; o autor e o
+  militar atribuído preenchem; só administradores mudam o dono, a avaliação e a atribuição; há no
+  máximo um relatório por avaliação.
+- O militar atribuído podia apropriar-se da operação e retirar a sinalização. Bloqueado.
+- Qualquer aprovado registava notificações para qualquer pessoa, com uma ligação arbitrária
+  (aceitava `javascript:`). Agora o cliente envia só a operação; destinatário, telefone, mensagem
+  e ligação são gerados pela base de dados.
+- O NEOP manual aceitava qualquer texto; a data de criação e o "alterado por" vinham do browser;
+  podia ficar-se sem administradores; o domínio `@gnr.pt` só era verificado no registo. Corrigido.
+- O estado de preenchimento dos relatórios era calculado no browser, com critérios diferentes em
+  duas páginas. Passou para a base de dados.
+- Segundo fator (TOTP) obrigatório para qualquer acesso a dados.
+- Registo de auditoria imutável a partir da aplicação, só legível por administradores.
+- Gravação de avaliação e suspeitos numa só transação.
+
+**Aplicação.**
+
+- A ligação de recuperação de password entrava diretamente na aplicação sem pedir a nova password.
+- Sem Content-Security-Policy, sem política de referrer e sem proteção contra clickjacking.
+- Mudar a password não pedia a atual; a sessão não expirava por inatividade (agora 30 minutos).
+- Ações recusadas pela base de dados apareciam como bem-sucedidas.
+- Páginas com endereço próprio abriam sem sessão; passam todas pelo mesmo portão de acesso.
+- 34 dependências que não eram usadas (algumas com vulnerabilidades) foram removidas; o pacote
+  `xlsx` 0.18.5, vulnerável e sem correções no npm, foi substituído por `write-excel-file`.
+- Actions do GitHub fixadas por commit, permissões mínimas por job, `pnpm audit` e testes no CI.
+
+**Funcionalidades.** Mês e horas da estatística de operações, sinalização de incompletas, impressão
+da avaliação sem ligação, militares por aprovar na lista de atribuição, datas em UTC, limite
+silencioso de 1000 linhas, GDH no formato `151630OUT26`, marca RESERVADO em impressões e
+exportações, nova paleta institucional (RAL 7013).
+
+**Por decidir fora do código.** O repositório é público e expõe o método de pontuação NEOP; o email
+real do primeiro administrador continua no histórico do git; a conta GitHub que publica o site
+deve ter 2FA e o ramo `main` protegido; e o site partilha a origem `<conta>.github.io` com qualquer
+outro site Pages da conta, que conseguiria ler a sessão guardada no browser — a solução é um
+domínio próprio (ver README).

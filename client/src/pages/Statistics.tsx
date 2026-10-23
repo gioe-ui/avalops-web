@@ -6,6 +6,7 @@ import PortugalMap from "@/components/PortugalMap";
 import { useChartDownload } from "@/hooks/useChartDownload";
 import { Download } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { NEOP_HEX } from "@/lib/neop";
 import OperationsStatistics from "./OperationsStatistics";
 import {
   PieChart,
@@ -21,7 +22,10 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const NEOP_COLORS = ["#1a472a", "#b8860b", "#8b0000"];
+// Hexadecimais (e não variáveis CSS): o gráfico pode ser exportado como imagem,
+// e aí as variáveis da página já não existem.
+const NEOP_COLORS = [NEOP_HEX["2º NEOP"], NEOP_HEX["3º NEOP"], NEOP_HEX["4º NEOP"]];
+const COR_BARRAS = "#625c52";
 
 /** Coordenadas geográficas dos Comandos Territoriais, para o mapa. */
 const CTER_COORDINATES: Record<string, { lat: number; lng: number }> = {
@@ -57,9 +61,9 @@ const DownloadButton = ({
   <button
     onClick={onClick}
     disabled={isLoading}
-    className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+    className="p-2 hover:bg-ral-100 rounded-md transition-colors text-xs font-semibold flex items-center gap-1 text-ral-700 disabled:opacity-50 disabled:cursor-not-allowed"
     title={`Descarregar como ${format.toUpperCase()}`}
-    style={{ color: "#1a472a" }}
+    aria-label={`Descarregar como ${format.toUpperCase()}`}
   >
     <Download className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
     {isLoading ? "A descarregar..." : format.toUpperCase()}
@@ -82,11 +86,11 @@ export default function Statistics() {
   });
 
   if (isLoading) {
-    return <div className="text-center py-16 text-gray-400">A carregar estatísticas...</div>;
+    return <div className="text-center py-16 text-ral-400">A carregar estatísticas...</div>;
   }
 
   if (!stats) {
-    return <div className="text-center py-16 text-gray-400">Sem dados disponíveis.</div>;
+    return <div className="text-center py-16 text-ral-400">Sem dados disponíveis.</div>;
   }
 
   const neopData = [
@@ -102,12 +106,12 @@ export default function Statistics() {
     { range: "76–100", count: stats.score76_100 },
   ];
 
-  const statCards = [
-    { label: "Total de Avaliações", value: stats.total },
-    { label: "Pontuação Média", value: stats.avgScore.toFixed(1) },
-    { label: "2º NEOP", value: stats.neop2 },
-    { label: "3º NEOP", value: stats.neop3 },
-    { label: "4º NEOP", value: stats.neop4 },
+  const statCards: Array<{ label: string; value: string | number; classe?: string }> = [
+    { label: "Total de avaliações", value: stats.total },
+    { label: "Pontuação média", value: stats.avgScore.toFixed(1).replace(".", ",") },
+    { label: "2º NEOP", value: stats.neop2, classe: "bg-neop-2-claro text-neop-2 border-neop-2/30" },
+    { label: "3º NEOP", value: stats.neop3, classe: "bg-neop-3-claro text-neop-3 border-neop-3/30" },
+    { label: "4º NEOP", value: stats.neop4, classe: "bg-neop-4-claro text-neop-4 border-neop-4/30" },
   ];
 
   const handleClearFilters = () => {
@@ -117,36 +121,22 @@ export default function Statistics() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      <h2 className="text-xl font-bold mb-6" style={{ color: "#1a472a" }}>
-        Estatísticas
-      </h2>
-
-      <div className="bg-white rounded-lg sm:rounded-xl p-4 sm:p-6 shadow-sm border border-gray-100 mb-6">
+      <div className="bg-white rounded-lg p-4 sm:p-6 shadow-sm border border-ral-200 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-2 block">Data inicial</Label>
-            <Input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="border-2 focus:border-[#1a472a]"
-            />
+            <Label htmlFor="est-inicio" className="text-sm font-semibold text-ral-700 mb-2 block">
+              Data inicial
+            </Label>
+            <Input id="est-inicio" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           </div>
           <div>
-            <Label className="text-sm font-semibold text-gray-600 mb-2 block">Data final</Label>
-            <Input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="border-2 focus:border-[#1a472a]"
-            />
+            <Label htmlFor="est-fim" className="text-sm font-semibold text-ral-700 mb-2 block">
+              Data final
+            </Label>
+            <Input id="est-fim" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           </div>
           <div className="flex items-end">
-            <Button
-              onClick={handleClearFilters}
-              variant="outline"
-              className="w-full border-2 text-gray-600 hover:bg-gray-50"
-            >
+            <Button onClick={handleClearFilters} variant="outline" className="w-full">
               Limpar filtros
             </Button>
           </div>
@@ -157,24 +147,18 @@ export default function Statistics() {
         {statCards.map((card) => (
           <div
             key={card.label}
-            className="text-white text-center py-3 sm:py-4 px-2 sm:px-3 rounded-lg sm:rounded-xl"
-            style={{ background: "linear-gradient(135deg, #1a472a 0%, #2d5a3d 100%)" }}
+            className={`text-center py-3 sm:py-4 px-2 sm:px-3 rounded-lg border ${card.classe ?? "bg-gioe text-white border-transparent"}`}
           >
-            <p className="text-[10px] sm:text-xs uppercase tracking-wider opacity-80 mb-1 sm:mb-2">
-              {card.label}
-            </p>
+            <p className="text-[10px] sm:text-xs uppercase tracking-wider opacity-85 mb-1 sm:mb-2">{card.label}</p>
             <p className="text-xl sm:text-2xl lg:text-3xl font-bold">{card.value}</p>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-8">
-        <div className="bg-white rounded-lg sm:rounded-xl p-3 sm:p-5 shadow-sm border border-gray-100">
+        <div className="bg-white rounded-lg p-3 sm:p-5 shadow-sm border border-ral-200">
           <div className="flex justify-between items-center mb-3 sm:mb-4">
-            <h3
-              className="text-xs sm:text-sm font-bold uppercase tracking-wider"
-              style={{ color: "#1a472a" }}
-            >
+            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-ral-700">
               Distribuição por NEOP
             </h3>
             <div className="flex gap-2">
@@ -191,7 +175,7 @@ export default function Statistics() {
             </div>
           </div>
           {stats.total === 0 ? (
-            <div className="flex items-center justify-center h-48 text-gray-400 text-xs sm:text-sm">
+            <div className="flex items-center justify-center h-48 text-ral-400 text-xs sm:text-sm">
               Sem dados
             </div>
           ) : (
@@ -241,12 +225,9 @@ export default function Statistics() {
           )}
         </div>
 
-        <div className="bg-white rounded-lg sm:rounded-xl p-3 sm:p-5 shadow-sm border border-gray-100">
+        <div className="bg-white rounded-lg p-3 sm:p-5 shadow-sm border border-ral-200">
           <div className="flex justify-between items-center mb-3 sm:mb-4">
-            <h3
-              className="text-xs sm:text-sm font-bold uppercase tracking-wider"
-              style={{ color: "#1a472a" }}
-            >
+            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-ral-700">
               Distribuição por pontuação
             </h3>
             <div className="flex gap-2">
@@ -263,18 +244,18 @@ export default function Statistics() {
             </div>
           </div>
           {stats.total === 0 ? (
-            <div className="flex items-center justify-center h-48 text-gray-400 text-xs sm:text-sm">
+            <div className="flex items-center justify-center h-48 text-ral-400 text-xs sm:text-sm">
               Sem dados
             </div>
           ) : (
             <div id="chart-score">
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={scoreData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#eceae5" />
                   <XAxis dataKey="range" tick={{ fontSize: 11 }} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                   <Tooltip />
-                  <Bar dataKey="count" name="Avaliações" fill="#1a472a" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="count" name="Avaliações" fill={COR_BARRAS} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -282,12 +263,9 @@ export default function Statistics() {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg sm:rounded-xl p-3 sm:p-5 shadow-sm border border-gray-100 mb-8">
+      <div className="bg-white rounded-lg p-3 sm:p-5 shadow-sm border border-ral-200 mb-8">
         <div className="flex justify-between items-center mb-3 sm:mb-4">
-          <h3
-            className="text-xs sm:text-sm font-bold uppercase tracking-wider"
-            style={{ color: "#1a472a" }}
-          >
+          <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-ral-700">
             Mapa de 4º NEOP por CTer
           </h3>
           <div className="flex gap-2">
@@ -314,31 +292,28 @@ export default function Statistics() {
 export function StatisticsPage() {
   const [activeTab, setActiveTab] = useState<"avaliacoes" | "operacoes">("avaliacoes");
 
+  const separador = (id: "avaliacoes" | "operacoes", rotulo: string) => (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={activeTab === id}
+      onClick={() => setActiveTab(id)}
+      className={`px-4 py-2 font-semibold border-b-2 transition-colors ${
+        activeTab === id ? "border-latao-500 text-ral-900" : "border-transparent text-ral-500 hover:text-ral-800"
+      }`}
+    >
+      {rotulo}
+    </button>
+  );
+
   return (
     <div>
-      <div className="flex gap-2 mb-6 border-b border-gray-200">
-        <button
-          onClick={() => setActiveTab("avaliacoes")}
-          className={`px-4 py-2 font-semibold transition-colors ${
-            activeTab === "avaliacoes" ? "border-b-2" : "text-gray-600 hover:text-gray-800"
-          }`}
-          style={
-            activeTab === "avaliacoes" ? { borderBottomColor: "#1a472a", color: "#1a472a" } : {}
-          }
-        >
-          Avaliações
-        </button>
-        <button
-          onClick={() => setActiveTab("operacoes")}
-          className={`px-4 py-2 font-semibold transition-colors ${
-            activeTab === "operacoes" ? "border-b-2" : "text-gray-600 hover:text-gray-800"
-          }`}
-          style={
-            activeTab === "operacoes" ? { borderBottomColor: "#1a472a", color: "#1a472a" } : {}
-          }
-        >
-          Operações
-        </button>
+      <div className="flex items-end justify-between gap-3 mb-6 flex-wrap">
+        <h2 className="text-xl font-bold text-ral-800">Estatísticas</h2>
+        <div role="tablist" className="flex gap-2 border-b border-ral-200">
+          {separador("avaliacoes", "Avaliações")}
+          {separador("operacoes", "Operações")}
+        </div>
       </div>
       {activeTab === "avaliacoes" ? <Statistics /> : <OperationsStatistics />}
     </div>

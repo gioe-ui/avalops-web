@@ -1,12 +1,15 @@
+import type { ComponentType } from "react";
 import { Route, Router, Switch } from "wouter";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import ErrorBoundary from "./components/ErrorBoundary";
+import VigilanciaSessao from "./components/VigilanciaSessao";
 import { ThemeProvider } from "./contexts/ThemeContext";
 
 import { configuracaoEmFalta } from "./lib/supabase";
 import ConfigMissing from "./pages/ConfigMissing";
 import Home from "./pages/Home";
+import Portao from "./pages/Portao";
 import NotFound from "@/pages/NotFound";
 import PrintEvaluation from "./pages/PrintEvaluation";
 import EditEvaluation from "./pages/EditEvaluation";
@@ -24,20 +27,39 @@ import OperationAnalysis from "./pages/OperationAnalysis";
  */
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+/** Todas as páginas, exceto a inicial (que já o faz), passam pelo portão de acesso. */
+const protegida = (Pagina: ComponentType<any>) =>
+  function PaginaProtegida(props: any) {
+    return (
+      <Portao>
+        <Pagina {...props} />
+      </Portao>
+    );
+  };
+
+const ProfileP = protegida(Profile);
+const MilitarDashboardP = protegida(MilitarDashboard);
+const PrintEvaluationP = protegida(PrintEvaluation);
+const OperationFormP = protegida(OperationForm);
+const EditEvaluationP = protegida(EditEvaluation);
+const PrintOperationP = protegida(PrintOperation);
+const OperationDetailP = protegida(OperationDetail);
+const SuspectProfilesP = protegida(SuspectProfiles);
+const OperationAnalysisP = protegida(OperationAnalysis);
+
 function Routes() {
   return (
     <Switch>
       <Route path="/" component={Home} />
-      <Route path="/profile" component={Profile} />
-      <Route path="/militar-dashboard" component={MilitarDashboard} />
-      <Route path="/print/:id" component={PrintEvaluation} />
-      <Route path="/operation/:evaluationId" component={OperationForm} />
-      <Route path="/edit-evaluation/:id" component={EditEvaluation} />
-      <Route path="/print-operation/:id" component={PrintOperation} />
-      <Route path="/operation-detail/:id" component={OperationDetail} />
-      <Route path="/suspect-profiles" component={SuspectProfiles} />
-      <Route path="/operation-analysis" component={OperationAnalysis} />
-      <Route path="/404" component={NotFound} />
+      <Route path="/profile" component={ProfileP} />
+      <Route path="/militar-dashboard" component={MilitarDashboardP} />
+      <Route path="/print/:id" component={PrintEvaluationP} />
+      <Route path="/operation/:evaluationId" component={OperationFormP} />
+      <Route path="/edit-evaluation/:id" component={EditEvaluationP} />
+      <Route path="/print-operation/:id" component={PrintOperationP} />
+      <Route path="/operation-detail/:id" component={OperationDetailP} />
+      <Route path="/suspect-profiles" component={SuspectProfilesP} />
+      <Route path="/operation-analysis" component={OperationAnalysisP} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -52,7 +74,8 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
-          <Toaster />
+          <Toaster richColors closeButton />
+          <VigilanciaSessao />
           <Router base={basePath}>
             <Routes />
           </Router>

@@ -3,6 +3,52 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Paleta institucional baseada em RAL 7013 (Braungrau / castanho-cinza).
+ *
+ * O RAL não define valores sRGB oficiais e as conversões variam entre fontes;
+ * #625C52 foi o valor escolhido. Para o ajustar, basta mudar --color-ral-600 e,
+ * se necessário, os tons vizinhos — o resto da aplicação usa estas variáveis.
+ */
+@theme {
+  --color-ral-50: #f6f5f2;
+  --color-ral-100: #eceae5;
+  --color-ral-200: #d9d5cd;
+  --color-ral-300: #beb8ac;
+  --color-ral-400: #9c9589;
+  --color-ral-500: #7d766a;
+  --color-ral-600: #625c52; /* RAL 7013 */
+  --color-ral-700: #4e4941;
+  --color-ral-800: #3d3933;
+  --color-ral-900: #2b2824;
+  --color-ral-950: #1c1a17;
+
+  /* Acento discreto, a condizer com o dourado do brasão. */
+  --color-latao-100: #f4ecd8;
+  --color-latao-300: #d9bf82;
+  --color-latao-500: #b08d3c;
+  --color-latao-700: #7a5f22;
+
+  /* Classificação NEOP: cores semânticas, independentes da cor institucional.
+     Todas com contraste ≥ 4,5:1 sobre branco e texto branco por cima. */
+  --color-neop-2: #2f6b3f;
+  --color-neop-2-claro: #e3efe6;
+  --color-neop-3: #96620a;
+  --color-neop-3-claro: #f7ecd5;
+  --color-neop-4: #8e1b1b;
+  --color-neop-4-claro: #f6e1e1;
+
+  /* Estados */
+  --color-ok: #2f6b3f;
+  --color-ok-claro: #e3efe6;
+  --color-aviso: #96620a;
+  --color-aviso-claro: #f7ecd5;
+  --color-erro: #b42318;
+  --color-erro-claro: #fbe4e2;
+
+  --font-sans: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -32,86 +78,56 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
 }
 
 :root {
-  /* Verde Militar GNR/GIOE */
-  --radius: 0.625rem;
-  --background: oklch(0.99 0 0);
-  --foreground: oklch(0.15 0.02 150);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0.02 150);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.02 150);
-  --primary: oklch(0.28 0.09 155);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.94 0.02 150);
-  --secondary-foreground: oklch(0.25 0.06 155);
-  --muted: oklch(0.96 0.01 150);
-  --muted-foreground: oklch(0.5 0.03 155);
-  --accent: oklch(0.94 0.02 150);
-  --accent-foreground: oklch(0.25 0.06 155);
-  --destructive: oklch(0.55 0.22 25);
-  --destructive-foreground: oklch(0.99 0 0);
-  --border: oklch(0.88 0.02 150);
-  --input: oklch(0.88 0.02 150);
-  --ring: oklch(0.28 0.09 155);
-  --chart-1: oklch(0.28 0.09 155);
-  --chart-2: oklch(0.55 0.12 80);
-  --chart-3: oklch(0.45 0.15 25);
-  --chart-4: oklch(0.6 0.1 200);
-  --chart-5: oklch(0.5 0.14 300);
-  --sidebar: oklch(0.28 0.09 155);
-  --sidebar-foreground: oklch(0.95 0.01 150);
-  --sidebar-primary: oklch(0.99 0 0);
-  --sidebar-primary-foreground: oklch(0.28 0.09 155);
-  --sidebar-accent: oklch(0.35 0.09 155);
-  --sidebar-accent-foreground: oklch(0.95 0.01 150);
-  --sidebar-border: oklch(0.35 0.09 155);
-  --sidebar-ring: oklch(0.55 0.12 155);
+  --radius: 0.5rem;
+  --background: var(--color-ral-50);
+  --foreground: var(--color-ral-900);
+  --card: #ffffff;
+  --card-foreground: var(--color-ral-900);
+  --popover: #ffffff;
+  --popover-foreground: var(--color-ral-900);
+  --primary: var(--color-ral-600);
+  --primary-foreground: #ffffff;
+  --secondary: var(--color-ral-100);
+  --secondary-foreground: var(--color-ral-800);
+  --muted: var(--color-ral-100);
+  --muted-foreground: var(--color-ral-600);
+  --accent: var(--color-ral-100);
+  --accent-foreground: var(--color-ral-800);
+  --destructive: var(--color-erro);
+  --destructive-foreground: #ffffff;
+  --border: var(--color-ral-200);
+  /* Contorno dos campos com contraste ≥ 3:1 sobre branco (WCAG 1.4.11). */
+  --input: #948d81;
+  --ring: var(--color-latao-500);
+  --chart-1: var(--color-ral-600);
+  --chart-2: var(--color-latao-500);
+  --chart-3: var(--color-neop-4);
+  --chart-4: var(--color-neop-2);
+  --chart-5: var(--color-ral-400);
 }
 
+/* A aplicação não oferece tema escuro; estes valores existem apenas para que
+   algum componente que o ative não fique ilegível. */
 .dark {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-500);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.85 0.005 65);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.85 0.005 65);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.85 0.005 65);
-  --secondary: oklch(0.24 0.006 286.033);
-  --secondary-foreground: oklch(0.7 0.005 65);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.92 0.005 65);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.488 0.243 264.376);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
-  --sidebar: oklch(0.21 0.006 285.885);
-  --sidebar-foreground: oklch(0.85 0.005 65);
-  --sidebar-accent: oklch(0.274 0.006 286.033);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.488 0.243 264.376);
+  --background: var(--color-ral-950);
+  --foreground: var(--color-ral-100);
+  --card: var(--color-ral-900);
+  --card-foreground: var(--color-ral-100);
+  --popover: var(--color-ral-900);
+  --popover-foreground: var(--color-ral-100);
+  --primary: var(--color-ral-300);
+  --primary-foreground: var(--color-ral-950);
+  --secondary: var(--color-ral-800);
+  --secondary-foreground: var(--color-ral-100);
+  --muted: var(--color-ral-800);
+  --muted-foreground: var(--color-ral-300);
+  --accent: var(--color-ral-800);
+  --accent-foreground: var(--color-ral-100);
+  --border: var(--color-ral-700);
+  --input: var(--color-ral-500);
 }
 
 @layer base {
@@ -120,24 +136,22 @@
   }
 
   body {
-    @apply bg-background text-foreground;
-    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    @apply bg-background text-foreground font-sans antialiased;
   }
 
-  /* Scrollbar customizada */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
-    background: #f1f1f1;
+    background: var(--color-ral-100);
   }
   ::-webkit-scrollbar-thumb {
-    background: #2d5a3d;
-    border-radius: 3px;
+    background: var(--color-ral-400);
+    border-radius: 4px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #1a472a;
+    background: var(--color-ral-600);
   }
 
   button:not(:disabled),
@@ -151,15 +165,27 @@
   input[type="radio"]:not(:disabled) {
     @apply cursor-pointer;
   }
+
+  /* Foco sempre visível para quem navega com o teclado. */
+  :focus-visible {
+    outline: 2px solid var(--color-latao-500);
+    outline-offset: 2px;
+  }
+
+  input[type="checkbox"] {
+    accent-color: var(--color-ral-600);
+  }
 }
 
 @layer components {
-  /**
-   * Container centrado com espaçamento responsivo.
-   * Uso: <div className="container">...</div>
-   * Para larguras específicas, usar diretamente max-w-* :
-   * <div className="max-w-6xl mx-auto px-4">...</div>
-   */
+  /** Fundo institucional: cabeçalhos e ecrãs de acesso. */
+  .bg-gioe {
+    background-color: var(--color-ral-800);
+    background-image:
+      radial-gradient(circle at 15% 0%, rgb(176 141 60 / 0.14), transparent 45%),
+      linear-gradient(135deg, var(--color-ral-900) 0%, var(--color-ral-700) 55%, var(--color-ral-600) 100%);
+  }
+
   .container {
     width: 100%;
     margin-left: auto;
@@ -187,12 +213,53 @@
       max-width: 1280px;
     }
   }
+
+  /** Marca de classificação de segurança. */
+  .marca-classificacao {
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    text-align: center;
+    text-transform: uppercase;
+    color: var(--color-erro);
+    border: 2px solid var(--color-erro);
+    padding: 0.15rem 0.75rem;
+    font-size: 0.75rem;
+    background: #ffffff;
+  }
 }
 
 /* Impressão: os relatórios de avaliação e de operação são impressos a partir
-   do browser, sem a navegação da aplicação. */
+   do browser, sem a navegação da aplicação. A classificação RESERVADO repete-se
+   no topo e no rodapé de todas as páginas. */
 @media print {
   .no-print {
     display: none !important;
   }
+
+  .marca-impressao {
+    display: block !important;
+    position: fixed;
+    left: 0;
+    right: 0;
+  }
+  .marca-impressao.topo {
+    top: 0;
+  }
+  .marca-impressao.rodape {
+    bottom: 0;
+  }
+
+  @page {
+    margin: 18mm 14mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+.marca-impressao {
+  display: none;
 }

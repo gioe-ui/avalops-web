@@ -3,35 +3,47 @@ name: Deploy para o GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+# Sem permissões por omissão; cada job pede só as de que precisa.
+permissions: {}
 
 # Um deploy de cada vez; não cancela o que já está a correr.
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: false
 
+# As actions estão fixadas pelo commit (SHA), não pela etiqueta: uma etiqueta
+# pode ser movida por quem controlar o repositório da action, um commit não.
+# O comentário indica a versão; o Dependabot propõe atualizações.
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Vulnerabilidades conhecidas nas dependências de produção
+        run: pnpm audit --prod
+
       - name: Verificação de tipos
         run: pnpm check
+
+      - name: Testes
+        run: pnpm test
 
       - name: Build
         env:
@@ -47,19 +59,25 @@ jobs:
         # aberto diretamente ou recarregado.
         run: cp dist/index.html dist/404.html
 
-      - name: Impedir o processamento pelo Jekyll
-        run: touch dist/.nojekyll
-
-      - uses: actions/upload-pages-artifact@v3
+      # Sem .nojekyll: a publicação por GitHub Actions não passa pelo Jekyll, e a
+      # v4 desta action já não envia ficheiros ocultos. A v4 fixa por SHA a
+      # action de que depende (upload-artifact); a v3 usava-a por etiqueta.
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        if: github.event_name != 'pull_request'
         with:
           path: dist
 
   deploy:
+    # Pull requests só verificam; só a main é publicada.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

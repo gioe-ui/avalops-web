@@ -30,11 +30,20 @@ class ErrorBoundary extends Component<Props, State> {
 
             <h2 className="text-xl mb-4">Ocorreu um erro inesperado.</h2>
 
-            <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
-              <pre className="text-sm text-muted-foreground whitespace-break-spaces">
-                {this.state.error?.stack}
-              </pre>
-            </div>
+            {/* O detalhe técnico só aparece em desenvolvimento: em produção não
+                acrescenta nada ao militar e expõe a estrutura interna. */}
+            {import.meta.env.DEV ? (
+              <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
+                <pre className="text-sm text-muted-foreground whitespace-break-spaces">
+                  {this.state.error?.stack}
+                </pre>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground mb-6 text-center">
+                Recarregue a página. Se o problema se repetir, informe um administrador da hora a
+                que aconteceu e do que estava a fazer.
+              </p>
+            )}
 
             <button
               onClick={() => window.location.reload()}

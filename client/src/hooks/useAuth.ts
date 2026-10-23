@@ -1,88 +1,67 @@
 /**
  * Estado de autenticação.
  *
- * Mantém a mesma interface do hook original (user, loading, error,
- * isAuthenticated, refresh, logout) para as páginas não mudarem, mas por baixo
- * usa o Supabase Auth em vez do portal OAuth da plataforma anterior.
+ * Mantém a interface do hook original (user, loading, error, isAuthenticated,
+ * refresh, logout) e acrescenta o estado do segundo fator. Os eventos do
+ * Supabase Auth são tratados uma única vez, em components/VigilanciaSessao.
  */
-import { useCallback, useEffect, useMemo } from "react";
-import { useLocation } from "wouter";
+import { useCallback, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
-import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
+import { aposTerminarSessao } from "@/lib/supabase";
 
-type UseAuthOptions = {
-  /** Redireciona para a página de entrada quando não há sessão. */
-  redirectOnUnauthenticated?: boolean;
-  redirectPath?: string;
-};
+export function useAuth() {
+  const queryClient = useQueryClient();
 
-export function useAuth(options?: UseAuthOptions) {
-  const { redirectOnUnauthenticated = false, redirectPath = "/" } = options ?? {};
-  const [location, navigate] = useLocation();
-  const utils = trpc.useUtils();
-
-  const meQuery = trpc.auth.me.useQuery(undefined, {
+  const sessaoQuery = trpc.auth.sessao.useQuery(undefined, {
     retry: false,
     refetchOnWindowFocus: false,
+    staleTime: 30_000,
   });
 
-  // O Supabase renova e expira sessões por sua conta; quando isso acontece,
-  // o perfil em cache deixa de estar correto.
-  useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") {
-        utils.auth.me.setData(undefined, null);
-      }
-      void utils.auth.me.invalidate();
-    });
-
-    return () => data.subscription.unsubscribe();
-    // utils é reconstruído a cada render; as suas funções são estáveis.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const logoutMutation = trpc.auth.logout.useMutation();
-
   const logout = useCallback(async () => {
+    // Esconde já os dados; aposTerminarSessao recarrega a aplicação, que é o
+    // que garante que nada fica em memória (esvaziar a cache não chegava: os
+    // ecrãs montados continuavam a mostrar o que tinham).
+    queryClient.setQueryData(["auth", "sessao"], null);
     try {
-      await logoutMutation.mutateAsync(undefined as never);
+      await api.auth.logout();
     } finally {
-      utils.auth.me.setData(undefined, null);
-      await utils.auth.me.invalidate();
+      aposTerminarSessao();
     }
-  }, [logoutMutation, utils]);
+  }, [queryClient]);
 
-  const state = useMemo(
-    () => ({
-      user: meQuery.data ?? null,
-      loading: meQuery.isLoading || logoutMutation.isPending,
-      error: meQuery.error ?? logoutMutation.error ?? null,
-      isAuthenticated: Boolean(meQuery.data),
-      /** Registado mas ainda à espera de aprovação de um administrador. */
-      isApproved: meQuery.data?.approved === 1,
-      isAdmin: meQuery.data?.role === "admin" && meQuery.data?.approved === 1,
-    }),
-    [
-      meQuery.data,
-      meQuery.error,
-      meQuery.isLoading,
-      logoutMutation.error,
-      logoutMutation.isPending,
-    ],
-  );
+  const state = useMemo(() => {
+    const estado = sessaoQuery.data ?? null;
+    const user = estado?.perfil ?? null;
+    const mfaOk = estado?.nivel === "aal2";
+    const ativo = user?.active === 1;
+    const aprovado = user?.approved === 1;
 
-  useEffect(() => {
-    if (!redirectOnUnauthenticated) return;
-    if (state.loading) return;
-    if (state.user) return;
-    if (location === redirectPath) return;
-
-    navigate(redirectPath);
-  }, [redirectOnUnauthenticated, redirectPath, state.loading, state.user, location, navigate]);
+    return {
+      user,
+      loading: sessaoQuery.isLoading,
+      error: sessaoQuery.error ?? null,
+      isAuthenticated: Boolean(user),
+      /** Ainda não registou uma aplicação autenticadora. */
+      precisaRegistarMfa: Boolean(user) && !estado?.fatorId,
+      /** Tem segundo fator registado mas a sessão ainda só passou a password. */
+      precisaVerificarMfa: Boolean(user) && Boolean(estado?.fatorId) && !mfaOk,
+      fatorId: estado?.fatorId ?? null,
+      /** Entrou por uma ligação de recuperação e ainda não definiu a nova password. */
+      recuperacao: Boolean(estado?.recuperacao),
+      mfaOk,
+      ativo,
+      /** Pode usar a aplicação: aprovado, ativo e com o segundo fator. */
+      isApproved: mfaOk && aprovado && ativo,
+      isAdmin: mfaOk && aprovado && ativo && user?.role === "admin",
+    };
+  }, [sessaoQuery.data, sessaoQuery.error, sessaoQuery.isLoading]);
 
   return {
     ...state,
-    refresh: () => meQuery.refetch(),
+    refresh: () => sessaoQuery.refetch(),
     logout,
   };
 }

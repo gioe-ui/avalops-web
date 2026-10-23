@@ -3,10 +3,14 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Loader2, ArrowLeft, Printer } from "lucide-react";
 import { FormHeader } from "@/components/FormHeader";
+import { MarcasImpressao } from "@/components/Classificacao";
+import { useAuth } from "@/hooks/useAuth";
+import { formatarData, formatarDataHora, horasEntreGdh } from "@/lib/datas";
 
 export default function PrintOperation() {
   const { id } = useParams();
   const [, navigate] = useLocation();
+  const { user } = useAuth();
   const operationId = Number(id ?? 0);
 
   const { data: operation, isLoading } = trpc.operations.getById.useQuery(
@@ -17,7 +21,7 @@ export default function PrintOperation() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+        <Loader2 className="w-8 h-8 animate-spin text-ral-400" />
       </div>
     );
   }
@@ -25,7 +29,7 @@ export default function PrintOperation() {
   if (!operation) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-        <p className="text-gray-500">Registo de operação não encontrado.</p>
+        <p className="text-ral-600">Registo de operação não encontrado.</p>
         <Button onClick={() => navigate("/")} variant="outline">
           <ArrowLeft className="w-4 h-4 mr-2" />
           Voltar
@@ -41,8 +45,8 @@ export default function PrintOperation() {
 
   const renderField = (label: string, value: any) => (
     <div key={label} className="mb-3">
-      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</p>
-      <p className="text-sm text-gray-800 mt-1">{String(value)}</p>
+      <p className="text-xs font-semibold text-ral-500 uppercase tracking-wide">{label}</p>
+      <p className="text-sm text-ral-900 mt-1 whitespace-pre-wrap">{String(value)}</p>
     </div>
   );
 
@@ -51,63 +55,51 @@ export default function PrintOperation() {
     if (visibleFields.length === 0) return null;
 
     return (
-      <div className="mb-6 pb-6 border-b border-gray-300">
-        <h3
-          className="text-sm font-bold text-white px-3 py-2 mb-4 rounded"
-          style={{ background: "#1a472a" }}
-        >
-          {title}
-        </h3>
+      <section className="mb-6 pb-6 border-b border-ral-200 break-inside-avoid">
+        <h3 className="text-sm font-bold text-white px-3 py-2 mb-4 rounded bg-ral-700">{title}</h3>
         <div className="grid grid-cols-2 gap-4">
           {visibleFields.map(([label, value]) => renderField(label, value))}
         </div>
-      </div>
+      </section>
     );
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6 print:p-0 print:bg-white">
+    <div className="min-h-dvh bg-background p-4 sm:p-6 print:p-0 print:bg-white">
+      <MarcasImpressao utilizador={user} recurso="operations" id={op.id} />
       <div className="max-w-4xl mx-auto mb-6 no-print">
         <div className="flex items-center justify-between">
-          <Button variant="outline" size="sm" onClick={() => navigate("/")}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
+          <Button variant="outline" size="sm" onClick={() => history.length > 1 ? history.back() : navigate("/")}>
+            <ArrowLeft className="w-4 h-4" />
             Voltar
           </Button>
-          <Button size="sm" onClick={() => window.print()} style={{ background: "#1a472a" }}>
-            <Printer className="w-4 h-4 mr-2" />
+          <Button size="sm" onClick={() => window.print()}>
+            <Printer className="w-4 h-4" />
             Imprimir
           </Button>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto bg-white p-8 print:p-0 rounded-lg shadow-lg print:shadow-none">
+      <div className="max-w-4xl mx-auto bg-white p-6 sm:p-8 print:p-0 rounded-lg border border-ral-200 print:border-0 shadow-sm print:shadow-none">
         <FormHeader subtitulo="Registo de Dados da Operação" />
 
-        <p className="text-xs text-gray-500 text-center -mt-4 mb-8">
-          Gerado em {new Date().toLocaleDateString("pt-PT")} às{" "}
-          {new Date().toLocaleTimeString("pt-PT")}
-        </p>
+        <p className="text-xs text-ral-500 text-center -mt-4 mb-8">Gerado em {formatarDataHora(new Date())}</p>
 
         {renderSection("Referência", [
           ["Ref. Filedoc / email / ordem verbal", op.refFiledoc],
           ["Operação n.º", op.operacaoNumero],
           ["Preenchimento SECOp", op.preenchimentoSecOp],
           ["Cmdt Op", op.cmdtOp],
-          ["Data Op", op.dataOp],
+          ["Data Op", op.dataOp ? formatarData(op.dataOp) : ""],
           ["Tipo de empenho", op.tipoEmpenho],
           ["Entidade solicitadora", op.entidadeSolicitadora],
         ])}
 
         {op.missao && (
-          <div className="mb-6 pb-6 border-b border-gray-300">
-            <h3
-              className="text-sm font-bold text-white px-3 py-2 mb-4 rounded"
-              style={{ background: "#1a472a" }}
-            >
-              Missão
-            </h3>
-            <p className="text-sm text-gray-800 whitespace-pre-wrap">{op.missao}</p>
-          </div>
+          <section className="mb-6 pb-6 border-b border-ral-200 break-inside-avoid">
+            <h3 className="text-sm font-bold text-white px-3 py-2 mb-4 rounded bg-ral-700">Missão</h3>
+            <p className="text-sm text-ral-900 whitespace-pre-wrap">{op.missao}</p>
+          </section>
         )}
 
         {renderSection("Dados da reunião de coordenação", [
@@ -115,6 +107,7 @@ export default function PrintOperation() {
           ["Observações", op.obsReuniao],
           ["GDH saída UI", op.gdhSaidaUi],
           ["GDH entrada UI", op.gdhEntradaUi],
+          ["Horas (saída → entrada UI)", horasEntreGdh(op.gdhSaidaUi, op.gdhEntradaUi)],
           ["Cmdt força", op.cmdtForcaReuniao],
           ["Indicativo rádio", op.indicativoRadioReuniao],
           ["Efetivo total", op.efetivTotalReuniao],
@@ -187,17 +180,12 @@ export default function PrintOperation() {
           ["Croquis", op.croquis],
         ])}
 
-        <div className="mt-8 pt-6 border-t-2 border-gray-300 text-center text-xs text-gray-500">
+        <div className="mt-8 pt-6 border-t-2 border-ral-300 text-center text-xs text-ral-500">
           <p>GIOE — Sistema de Avaliação de Pedidos de Apoio</p>
         </div>
       </div>
 
-      <style>{`
-        @media print {
-          body { margin: 0; padding: 0; background: white; }
-          .max-w-4xl { max-width: 100%; }
-        }
-      `}</style>
+
     </div>
   );
 }

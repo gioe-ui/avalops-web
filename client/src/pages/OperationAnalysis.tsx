@@ -2,23 +2,10 @@ import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
-import { Badge } from "@/components/ui/badge";
-import { BarChart3, TrendingUp } from "lucide-react";
-
-type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
-
-const getNeopColor = (neop: string): BadgeVariant => {
-  switch (neop) {
-    case "4º NEOP":
-      return "destructive";
-    case "3º NEOP":
-      return "default";
-    case "2º NEOP":
-      return "secondary";
-    default:
-      return "outline";
-  }
-};
+import { cterDaAvaliacao } from "@/lib/api";
+import { formatarData } from "@/lib/datas";
+import { NEOPS, NeopBadge, corNeop } from "@/lib/neop";
+import { TrendingUp } from "lucide-react";
 
 export default function OperationAnalysis() {
   const [selectedNeop, setSelectedNeop] = useState<string | null>(null);
@@ -35,9 +22,8 @@ export default function OperationAnalysis() {
 
     evaluations.forEach((evaluation: any) => {
       byNeop[evaluation.neop] = (byNeop[evaluation.neop] || 0) + 1;
-      if (evaluation.cterRequerente) {
-        byCter[evaluation.cterRequerente] = (byCter[evaluation.cterRequerente] || 0) + 1;
-      }
+      const cter = cterDaAvaliacao(evaluation);
+      if (cter) byCter[cter] = (byCter[cter] || 0) + 1;
       totalScore += evaluation.pontuacao;
       if (evaluation.neop === "4º NEOP") neop4Count++;
     });
@@ -62,13 +48,10 @@ export default function OperationAnalysis() {
   const totalPages = Math.ceil(filteredOperations.length / pageSize);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Análise de Operações</h1>
-          <p className="text-muted-foreground mt-2">Estatísticas e tendências das avaliações</p>
-        </div>
-        <BarChart3 className="h-8 w-8 text-muted-foreground" />
+    <div className="space-y-6 max-w-7xl mx-auto">
+      <div>
+        <h2 className="text-xl font-bold text-ral-800">Análise de operações</h2>
+        <p className="text-sm text-ral-500">Distribuição e lista das avaliações por classificação</p>
       </div>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -99,7 +82,7 @@ export default function OperationAnalysis() {
             <CardTitle className="text-sm font-medium text-muted-foreground">4º NEOP</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-red-600">{stats.neop4Percentage}%</p>
+            <p className="text-3xl font-bold text-neop-4">{stats.neop4Percentage}%</p>
           </CardContent>
         </Card>
 
@@ -122,15 +105,18 @@ export default function OperationAnalysis() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {Object.entries(stats.byNeop).map(([neop, count]) => (
+            {NEOPS.filter((n) => stats.byNeop[n]).map((neop) => {
+              const count = stats.byNeop[neop];
+              return (
               <div key={neop} className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 flex-1">
-                  <Badge variant={getNeopColor(neop)}>{neop}</Badge>
+                  <NeopBadge neop={neop} className="w-20 justify-center" />
                   <div className="flex-1 bg-muted rounded-full h-2">
                     <div
-                      className="bg-primary h-2 rounded-full"
+                      className="h-2 rounded-full"
                       style={{
                         width: `${stats.totalOperations > 0 ? (count / stats.totalOperations) * 100 : 0}%`,
+                        background: corNeop(neop).forte,
                       }}
                     />
                   </div>
@@ -143,7 +129,8 @@ export default function OperationAnalysis() {
                   %)
                 </span>
               </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>
@@ -163,7 +150,7 @@ export default function OperationAnalysis() {
             >
               Todas
             </Button>
-            {Object.keys(stats.byNeop).map((neop) => (
+            {NEOPS.filter((n) => stats.byNeop[n]).map((neop) => (
               <Button
                 key={neop}
                 variant={selectedNeop === neop ? "default" : "outline"}
@@ -193,12 +180,12 @@ export default function OperationAnalysis() {
               paginatedOperations.map((evaluation: any) => (
                 <div
                   key={evaluation.id}
-                  className="flex items-center justify-between p-3 border rounded-lg"
+                  className="flex items-center justify-between p-3 border border-ral-200 rounded-lg"
                 >
                   <div>
-                    <p className="font-medium">{evaluation.nuipc || `#${evaluation.id}`}</p>
+                    <p className="font-medium text-ral-900">{evaluation.nuipc || `#${evaluation.id}`}</p>
                     <p className="text-sm text-muted-foreground">
-                      {[evaluation.dataAvaliacao, evaluation.cterRequerente]
+                      {[evaluation.dataAvaliacao && formatarData(evaluation.dataAvaliacao), cterDaAvaliacao(evaluation)]
                         .filter(Boolean)
                         .join(" • ") || "Sem data"}
                     </p>
@@ -208,7 +195,7 @@ export default function OperationAnalysis() {
                       <p className="text-sm text-muted-foreground">Pontuação</p>
                       <p className="text-lg font-bold">{evaluation.pontuacao}</p>
                     </div>
-                    <Badge variant={getNeopColor(evaluation.neop)}>{evaluation.neop}</Badge>
+                    <NeopBadge neop={evaluation.neop} />
                   </div>
                 </div>
               ))

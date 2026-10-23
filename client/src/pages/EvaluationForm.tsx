@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -12,54 +13,50 @@ import {
 import { Save, Printer } from "lucide-react";
 import { EvaluationFields } from "@/components/EvaluationFields";
 import { FormHeader } from "@/components/FormHeader";
+import { MarcasImpressao } from "@/components/Classificacao";
+import { useAuth } from "@/hooks/useAuth";
+import { formatarData } from "@/lib/datas";
 import type { Suspect } from "@/components/SuspectForm";
 import {
-  DEFAULT_FORM,
   avaliarFormulario,
+  novoFormulario,
   paraRegistoDeAvaliacao,
   type FormState,
 } from "./evaluationFormModel";
 
+/** Suspeitos no formato que a base de dados grava. */
+export const paraRegistoDeSuspeitos = (suspects: Suspect[]) =>
+  suspects.map((s) => ({
+    nome: s.nome,
+    dataNascimento: s.dataNascimento,
+    nacionalidade: s.nacionalidade,
+    nif: s.nif,
+    cc: s.cc,
+    morada: s.morada,
+    observacoes: s.observacoes,
+  }));
+
 export default function EvaluationForm() {
-  const [form, setForm] = useState<FormState>(DEFAULT_FORM);
+  const { user } = useAuth();
+  const [form, setForm] = useState<FormState>(novoFormulario);
   const [showConfirm, setShowConfirm] = useState(false);
   const [suspects, setSuspects] = useState<Suspect[]>([]);
   const utils = trpc.useUtils();
 
   const { pontuacao, neop, neopColor } = avaliarFormulario(form);
 
-  const suspectsMutation = trpc.suspects.createBatch.useMutation({
-    onError: (error) => toast.error("Erro ao guardar suspeitos: " + error.message),
-  });
-
-  const createMutation = trpc.evaluations.create.useMutation({
+  const guardar = trpc.evaluations.guardar.useMutation({
     onSuccess: (result) => {
-      if (suspects.length > 0 && result?.evaluationId) {
-        suspectsMutation.mutate({
-          evaluationId: result.evaluationId,
-          suspects: suspects.map((s) => ({
-            nome: s.nome || null,
-            dataNascimento: s.dataNascimento || null,
-            nacionalidade: s.nacionalidade || null,
-            nif: s.nif || null,
-            cc: s.cc || null,
-            morada: s.morada || null,
-            observacoes: s.observacoes || null,
-          })),
-        });
-      }
-
       // Quem decide a pontuação é a base de dados; mostra-se o que ficou
       // gravado, não o que o formulário tinha calculado.
       toast.success(`Avaliação guardada — ${result.pontuacao}/100, ${result.neop}.`);
 
-      setForm({ ...DEFAULT_FORM, dataAvaliacao: new Date().toISOString().split("T")[0] });
+      setForm(novoFormulario());
       setSuspects([]);
       setShowConfirm(false);
-      utils.evaluations.list.invalidate();
-      utils.evaluations.getCters.invalidate();
-      utils.statistics.get.invalidate();
-      utils.statistics.neop4ByCter.invalidate();
+      void utils.evaluations.invalidate();
+      void utils.statistics.invalidate();
+      void utils.suspectProfiles.invalidate();
     },
     onError: (e) => toast.error("Erro ao guardar: " + e.message),
   });
@@ -70,78 +67,64 @@ export default function EvaluationForm() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-6 no-print">
-        <h2 className="text-xl font-bold" style={{ color: "#1a472a" }}>
-          Novo Formulário de Avaliação
-        </h2>
-        <Button
-          variant="outline"
-          onClick={() => window.print()}
-          className="text-orange-600 border-orange-600 hover:bg-orange-50 border-2"
-        >
-          <Printer className="w-4 h-4 mr-2" />
+      <MarcasImpressao utilizador={user} recurso="formulario-avaliacao" />
+
+      <div className="flex items-center justify-between gap-3 mb-6 no-print flex-wrap">
+        <h2 className="text-xl font-bold text-ral-800">Novo formulário de avaliação</h2>
+        <Button variant="outline" onClick={() => window.print()}>
+          <Printer className="w-4 h-4" />
           Imprimir
         </Button>
       </div>
 
-      <div id="form-container" className="bg-white p-6 rounded-lg">
+      <div id="form-container" className="bg-white p-4 sm:p-6 rounded-lg border border-ral-200 shadow-sm">
         <FormHeader subtitulo="Avaliação de Pedido de Apoio" />
 
-        <EvaluationFields
-          form={form}
-          set={set}
-          suspects={suspects}
-          onSuspectsChange={setSuspects}
-        />
+        <EvaluationFields form={form} set={set} suspects={suspects} onSuspectsChange={setSuspects} />
 
-        <Button
-          className="w-full py-6 text-base font-bold no-print"
-          style={{ background: "linear-gradient(135deg, #1a472a 0%, #2d5a3d 100%)" }}
-          onClick={() => setShowConfirm(true)}
-        >
-          <Save className="w-5 h-5 mr-2" />
+        <Button className="w-full h-12 text-base font-bold no-print" onClick={() => setShowConfirm(true)}>
+          <Save className="w-5 h-5" />
           Guardar avaliação
         </Button>
 
         <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle style={{ color: "#1a472a" }}>Confirmar submissão</DialogTitle>
+              <DialogTitle className="text-ral-800">Confirmar submissão</DialogTitle>
+              <DialogDescription>Confira os dados principais antes de guardar.</DialogDescription>
             </DialogHeader>
-            <p className="text-sm text-gray-600 mb-3">Guardar esta avaliação?</p>
-            <div className="bg-gray-50 rounded-lg p-4 text-sm space-y-1 border border-gray-200">
-              <p>
-                <strong>POC:</strong> {form.pocNome || "—"}
-              </p>
-              <p>
-                <strong>CTer:</strong> {form.cterRequerente || "—"}
-              </p>
-              <p>
-                <strong>Avaliador:</strong> {form.avaliador || "—"}
-              </p>
-              <p>
-                <strong>Data:</strong> {form.dataAvaliacao}
-              </p>
-              <p>
-                <strong>Pontuação:</strong> {pontuacao}/100
-              </p>
-              <p>
-                <strong>NEOP:</strong>{" "}
-                <span className="font-bold" style={{ color: neopColor }}>
-                  {neop}
-                </span>
-              </p>
-            </div>
-            <DialogFooter className="gap-2 mt-4">
+            <dl className="bg-ral-50 rounded-lg p-4 text-sm grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border border-ral-200">
+              <dt className="font-semibold text-ral-700">POC</dt>
+              <dd>{form.pocNome || "—"}</dd>
+              <dt className="font-semibold text-ral-700">CTer</dt>
+              <dd>{form.cterRequerente || "—"}</dd>
+              <dt className="font-semibold text-ral-700">Avaliador</dt>
+              <dd>{form.avaliador || "—"}</dd>
+              <dt className="font-semibold text-ral-700">Data</dt>
+              <dd>{formatarData(form.dataAvaliacao)}</dd>
+              <dt className="font-semibold text-ral-700">Suspeitos</dt>
+              <dd>{suspects.length}</dd>
+              <dt className="font-semibold text-ral-700">Pontuação</dt>
+              <dd>{pontuacao}/100</dd>
+              <dt className="font-semibold text-ral-700">NEOP</dt>
+              <dd className="font-bold" style={{ color: neopColor }}>
+                {neop}
+              </dd>
+            </dl>
+            <DialogFooter className="gap-2 mt-2">
               <Button variant="outline" onClick={() => setShowConfirm(false)}>
                 Cancelar
               </Button>
               <Button
-                onClick={() => createMutation.mutate(paraRegistoDeAvaliacao(form))}
-                disabled={createMutation.isPending}
-                style={{ background: "#1a472a" }}
+                onClick={() =>
+                  guardar.mutate({
+                    dados: paraRegistoDeAvaliacao(form),
+                    suspeitos: paraRegistoDeSuspeitos(suspects),
+                  })
+                }
+                disabled={guardar.isPending}
               >
-                {createMutation.isPending ? "A guardar..." : "Confirmar"}
+                {guardar.isPending ? "A guardar..." : "Confirmar"}
               </Button>
             </DialogFooter>
           </DialogContent>

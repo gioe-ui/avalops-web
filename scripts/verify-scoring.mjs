@@ -161,6 +161,11 @@ ${values};
 
   console.log(`OK — ${rows.length} casos: TypeScript e PostgreSQL concordam em pontuação e NEOP.`);
 } finally {
-  psql(`delete from auth.users where id = ${lit(uid)}::uuid;`);
+  // As avaliações têm de sair primeiro: desde 05_seguranca.sql, apagar uma
+  // conta com trabalho associado é recusado em vez de o apagar em cascata.
+  psql(`
+    delete from public.evaluations where "userId" = ${lit(uid)}::uuid;
+    delete from auth.users where id = ${lit(uid)}::uuid;
+  `);
   rmSync(workDir, { recursive: true, force: true });
 }

@@ -2,12 +2,22 @@
 <html lang="pt-PT">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex, nofollow" />
+    <!-- Só a origem (nunca o caminho, que contém identificadores) é enviada a
+         outros sites. "strict-origin" e não "no-referrer" porque o servidor de
+         mapas do OpenStreetMap exige um Referer. -->
+    <meta name="referrer" content="strict-origin" />
+    <meta name="theme-color" content="#3d3933" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" type="image/webp" href="/gioe-logo.webp" />
+    <!-- A Content-Security-Policy é acrescentada no build (vite.config.ts),
+         porque depende do endereço do Supabase. -->
     <title>GIOE — Sistema de Avaliação de Pedidos de Apoio</title>
   </head>
 
   <body>
+    <noscript>Esta aplicação precisa de JavaScript.</noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

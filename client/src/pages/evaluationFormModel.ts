@@ -7,6 +7,8 @@
  * do servidor.
  */
 import { calcScore } from "@/lib/scoring";
+import { hojeLocal } from "@/lib/datas";
+import { COMPLEXIDADE, NEOPS, corNeop, type Neop } from "@/lib/neop";
 
 export const CTERS = [
   "CT Aveiro",
@@ -77,7 +79,7 @@ export type FormState = {
   outrasObservacoes: string;
 };
 
-export const DEFAULT_FORM: FormState = {
+const FORMULARIO_BASE: FormState = {
   nuipc: "",
   entidadeSolicitadora: "",
   refFiledoc: "",
@@ -118,12 +120,22 @@ export const DEFAULT_FORM: FormState = {
   segurancaOutrasMedidas: false,
 
   avaliador: "",
-  dataAvaliacao: new Date().toISOString().split("T")[0],
+  dataAvaliacao: "",
   parecer: "",
   neopManual: "",
   observacoes: "",
   outrasObservacoes: "",
 };
+
+/**
+ * Formulário em branco, com a data de hoje. É uma função, e não uma constante,
+ * para que a data seja a do momento em que se abre o formulário — e na hora
+ * local, não em UTC (entre a meia-noite e a 01:00 a versão anterior dava o dia
+ * anterior).
+ */
+export function novoFormulario(): FormState {
+  return { ...FORMULARIO_BASE, tipoCriminal: [...FORMULARIO_BASE.tipoCriminal], dataAvaliacao: hojeLocal() };
+}
 
 const b = (v: boolean) => (v ? 1 : 0);
 const toBool = (v: unknown) => Boolean(v) && v !== 0 && v !== "0";
@@ -159,37 +171,20 @@ export function avaliarFormulario(f: FormState) {
     segurancaOutrasMedidas: b(f.segurancaOutrasMedidas),
   });
 
-  const neop =
-    f.neopManual && ["2º NEOP", "3º NEOP", "4º NEOP"].includes(f.neopManual)
-      ? f.neopManual
-      : calculado;
+  const neop: Neop =
+    f.neopManual && (NEOPS as readonly string[]).includes(f.neopManual) ? (f.neopManual as Neop) : calculado;
 
-  if (neop === "4º NEOP") {
-    return {
-      pontuacao,
-      neop,
-      complexidade: "Alta",
-      descricao: "Necessita de planeamento especializado",
-      neopColor: "#ef4444",
-    };
-  }
-
-  if (neop === "3º NEOP") {
-    return {
-      pontuacao,
-      neop,
-      complexidade: "Média",
-      descricao: "Operação com risco moderado — requer coordenação",
-      neopColor: "#f97316",
-    };
-  }
+  const { nivel, descricao, largura } = COMPLEXIDADE[neop];
 
   return {
     pontuacao,
     neop,
-    complexidade: "Baixa",
-    descricao: "Operação de rotina — procedimentos padrão",
-    neopColor: "#22c55e",
+    complexidade: nivel,
+    descricao,
+    largura,
+    neopColor: corNeop(neop).forte,
+    /** Sem nenhum tipo de crime marcado, o cálculo conta "Outro" (+4). */
+    semTipoCriminal: f.tipoCriminal.length === 0,
   };
 }
 
@@ -309,7 +304,7 @@ export function deRegistoParaFormulario(e: Record<string, any>): FormState {
     segurancaOutrasMedidas: toBool(e.segurancaOutrasMedidas),
 
     avaliador: e.avaliador ?? "",
-    dataAvaliacao: e.dataAvaliacao ?? new Date().toISOString().split("T")[0],
+    dataAvaliacao: e.dataAvaliacao ?? hojeLocal(),
     parecer,
     neopManual: e.neopManual ?? "",
     observacoes: e.observacoes ?? "",
