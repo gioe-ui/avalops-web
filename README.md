@@ -90,11 +90,14 @@ A segurança depende também destas opções, que não estão no código:
 | --- | --- | --- |
 | Authentication → Sign In / Providers → Email | **Confirm email** ligado | Sem isto, qualquer pessoa regista um `@gnr.pt` inventado sem ter a caixa de correio |
 | Authentication → Sign In / Providers → Email | **Secure email change** e **Secure password change** ligados | Mudar email ou password exige confirmação |
-| Authentication → Sign In / Providers → Email | Comprimento mínimo da password **12** | A aplicação pede 12, mas só o servidor o garante |
-| Authentication → Multi-Factor | **TOTP** ativo | Sem isto ninguém consegue registar o segundo fator e ninguém acede a dados |
-| Authentication → URL Configuration | Endereço do site nas *Redirect URLs* (ex.: `https://<utilizador>.github.io/<repositório>/`) | Confirmação de email e recuperação de password |
-| Authentication → Rate Limits / Attack Protection | Limites de tentativas e CAPTCHA | Dificulta ataques de força bruta ao login |
-| Authentication → Sessions | Tempo máximo de inatividade e de duração da sessão | O fim de sessão por inatividade da aplicação (30 min) é feito no browser; este é o equivalente no servidor, que vale mesmo para um token esquecido. Pode só existir nos planos pagos (confirmar no painel) |
+| Authentication → Sign In / Providers → Email | Comprimento mínimo da password **12**, sem regras de caracteres | A aplicação pede 12 e sugere frases longas; só o servidor o garante |
+| Authentication → Sign In / Providers → Email | Opção que exija a password atual ao mudar de password (se existir): **desligada** | A aplicação verifica a password atual por outro meio e não a envia nesse pedido; ligada, a mudança de password falha |
+| Authentication → Emails → SMTP | Servidor SMTP próprio | O serviço de email incluído só envia para membros da organização no Supabase e com limite muito baixo: sem SMTP próprio, a confirmação de email e a recuperação de password não chegam a endereços `@gnr.pt` |
+| Authentication → Multi-Factor | **TOTP** ativo (registo e verificação) | Sem isto ninguém consegue registar o segundo fator e ninguém acede a dados |
+| Authentication → URL Configuration | *Site URL* e *Redirect URLs* com o endereço exato do site (ex.: `https://<conta>.github.io/<repositório>/`); retirar endereços antigos | Confirmação de email e recuperação de password |
+| Authentication → Rate Limits | Rever os limites de tentativas | Dificulta ataques de força bruta ao login |
+| Authentication → Attack Protection | **Não** ativar CAPTCHA | A aplicação não envia o token de CAPTCHA: ativá-lo bloqueia todas as entradas e registos |
+| Authentication → Sessions | Duração máxima (ex.: 12 h) e inatividade **acima** da validade do token de acesso (ex.: 2 h); *single session per user* desligado | Equivalente no servidor ao fim de sessão por inatividade da aplicação (30 min, no browser). Uma inatividade inferior à validade do token terminaria sessões ativas; uma sessão única terminaria a sessão ao mudar de password. Pode só existir nos planos pagos |
 
 Os nomes dos menus mudam com alguma frequência no Supabase; se algum não existir com este nome,
 procurar a opção equivalente. Algumas (por exemplo, a deteção de passwords comprometidas ou o
